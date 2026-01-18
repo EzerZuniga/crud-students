@@ -1,0 +1,55 @@
+# Dependencias
+/vendor/
+node_modules/
+composer.lock
+package-lock.json
+
+# Entorno
+.env
+.env.local
+.env.*.local
+
+# IDEs
+/.vscode/
+/.idea/
+*.sublime-project
+*.sublime-workspace
+/.fleet/
+
+# Sistema Operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+storage/logs/*.log
+storage/logs/*.txt
+!storage/logs/.gitkeep
+
+# Archivos temporales
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Configuración local
+config/database.php
+!config/database.example.php
+
+# Uploads (si se implementa en el futuro)
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# Cache
+storage/cache/*
+!storage/cache/.gitkeep
+
+# Testing
+phpunit.xml
+.phpunit.result.cache
+/coverage/
+
+# Build
+/build/
+/dist/
