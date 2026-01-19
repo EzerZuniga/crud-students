@@ -1,92 +1,138 @@
-<div style="max-width: 600px; margin: 0 auto;">
-    <div class="page-header">
-        <h1 class="page-title">Crear Nuevo Estudiante</h1>
-    </div>
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <!-- Page Header -->
+        <div class="d-flex align-items-center mb-4">
+            <a href="<?= route('students.index') ?>" class="btn btn-outline-secondary me-3">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <div>
+                <h1 class="h2 mb-1">
+                    <i class="bi bi-person-plus text-primary"></i>
+                    Crear Nuevo Estudiante
+                </h1>
+                <p class="text-muted mb-0">Completa el formulario para registrar un nuevo estudiante</p>
+            </div>
+        </div>
 
-    <div class="card">
-        <div class="card-body">
-            <form method="POST" action="/?action=store">
-                <div class="mb-3">
-                    <label class="form-label" for="name">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
-                            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"></path>
-                            <circle cx="12" cy="7" r="4"></circle>
-                        </svg>
-                        Nombre Completo
-                    </label>
-                    <input 
-                        class="form-control <?= isset($errors['name']) ? 'is-invalid' : '' ?>" 
-                        type="text" 
-                        name="name" 
-                        id="name" 
-                        value="<?= htmlspecialchars($old['name'] ?? '') ?>" 
-                        placeholder="Ej: Juan Pérez García"
-                        required
-                    >
-                    <?php if (isset($errors['name'])): ?>
-                        <div class="invalid-feedback"><?= htmlspecialchars($errors['name']) ?></div>
-                    <?php endif; ?>
-                </div>
+        <!-- Form Card -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-file-earmark-text me-2"></i>
+                    Información del Estudiante
+                </h5>
+            </div>
+            <div class="card-body p-4">
+                <?php if (isset($errors['general'])): ?>
+                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <?= e($errors['general']) ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
 
-                <div class="mb-3">
-                    <label class="form-label" for="email">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
-                            <polyline points="22,6 12,13 2,6"></polyline>
-                        </svg>
-                        Correo Electrónico
-                    </label>
-                    <input 
-                        class="form-control <?= isset($errors['email']) ? 'is-invalid' : '' ?>" 
-                        type="email" 
-                        name="email" 
-                        id="email" 
-                        value="<?= htmlspecialchars($old['email'] ?? '') ?>" 
-                        placeholder="Ej: estudiante@ejemplo.com"
-                        required
-                    >
-                    <?php if (isset($errors['email'])): ?>
-                        <div class="invalid-feedback"><?= htmlspecialchars($errors['email']) ?></div>
-                    <?php endif; ?>
-                </div>
+                <form method="POST" action="<?= route('students.store') ?>" novalidate>
+                    <?= csrf_field() ?>
+                    
+                    <!-- Nombre -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold" for="name">
+                            <i class="bi bi-person text-primary me-1"></i>
+                            Nombre Completo <span class="text-danger">*</span>
+                        </label>
+                        <input 
+                            class="form-control form-control-lg <?= isset($errors['name']) ? 'is-invalid' : '' ?>" 
+                            type="text" 
+                            name="name" 
+                            id="name" 
+                            value="<?= e(old('name', $old['name'] ?? '')) ?>" 
+                            placeholder="Ej: Juan Pérez García"
+                            required
+                            autofocus
+                        >
+                        <?php if (isset($errors['name'])): ?>
+                            <div class="invalid-feedback">
+                                <i class="bi bi-exclamation-circle me-1"></i>
+                                <?= e($errors['name']) ?>
+                            </div>
+                        <?php else: ?>
+                            <small class="form-text text-muted">Mínimo 3 caracteres, máximo <?= MAX_NAME_LENGTH ?></small>
+                        <?php endif; ?>
+                    </div>
 
-                <div class="mb-3">
-                    <label class="form-label" for="phone">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 0.25rem;">
-                            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"></path>
-                        </svg>
-                        Número de Teléfono
-                    </label>
-                    <input 
-                        class="form-control <?= isset($errors['phone']) ? 'is-invalid' : '' ?>" 
-                        type="text" 
-                        name="phone" 
-                        id="phone" 
-                        value="<?= htmlspecialchars($old['phone'] ?? '') ?>" 
-                        placeholder="Ej: +52 123 456 7890"
-                        required
-                    >
-                    <?php if (isset($errors['phone'])): ?>
-                        <div class="invalid-feedback"><?= htmlspecialchars($errors['phone']) ?></div>
-                    <?php endif; ?>
-                </div>
+                    <!-- Email -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold" for="email">
+                            <i class="bi bi-envelope text-primary me-1"></i>
+                            Correo Electrónico <span class="text-danger">*</span>
+                        </label>
+                        <input 
+                            class="form-control form-control-lg <?= isset($errors['email']) ? 'is-invalid' : '' ?>" 
+                            type="email" 
+                            name="email" 
+                            id="email" 
+                            value="<?= e(old('email', $old['email'] ?? '')) ?>" 
+                            placeholder="Ej: estudiante@ejemplo.com"
+                            required
+                        >
+                        <?php if (isset($errors['email'])): ?>
+                            <div class="invalid-feedback">
+                                <i class="bi bi-exclamation-circle me-1"></i>
+                                <?= e($errors['email']) ?>
+                            </div>
+                        <?php else: ?>
+                            <small class="form-text text-muted">Formato válido de correo electrónico</small>
+                        <?php endif; ?>
+                    </div>
 
-                <div class="btn-group" style="margin-top: 2rem;">
-                    <button class="btn btn-primary" type="submit">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="20 6 9 17 4 12"></polyline>
-                        </svg>
-                        Guardar Estudiante
-                    </button>
-                    <a class="btn btn-outline-secondary" href="/">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                        Cancelar
-                    </a>
-                </div>
-            </form>
+                    <!-- Teléfono -->
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold" for="phone">
+                            <i class="bi bi-telephone text-primary me-1"></i>
+                            Número de Teléfono <span class="text-danger">*</span>
+                        </label>
+                        <input 
+                            class="form-control form-control-lg <?= isset($errors['phone']) ? 'is-invalid' : '' ?>" 
+                            type="tel" 
+                            name="phone" 
+                            id="phone" 
+                            value="<?= e(old('phone', $old['phone'] ?? '')) ?>" 
+                            placeholder="Ej: +52 123 456 7890"
+                            required
+                        >
+                        <?php if (isset($errors['phone'])): ?>
+                            <div class="invalid-feedback">
+                                <i class="bi bi-exclamation-circle me-1"></i>
+                                <?= e($errors['phone']) ?>
+                            </div>
+                        <?php else: ?>
+                            <small class="form-text text-muted">Formato: +código país seguido del número</small>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4 pt-3 border-top">
+                        <a class="btn btn-outline-secondary px-4" href="<?= route('students.index') ?>">
+                            <i class="bi bi-x-circle me-1"></i>
+                            Cancelar
+                        </a>
+                        <button class="btn btn-primary px-4" type="submit">
+                            <i class="bi bi-check-circle me-1"></i>
+                            Guardar Estudiante
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Help Card -->
+        <div class="card border-0 bg-light mt-3">
+            <div class="card-body">
+                <small class="text-muted">
+                    <i class="bi bi-info-circle me-1"></i>
+                    <strong>Nota:</strong> Todos los campos marcados con <span class="text-danger">*</span> son obligatorios.
+                </small>
+            </div>
         </div>
     </div>
 </div>

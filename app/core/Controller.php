@@ -3,6 +3,9 @@
  * Clase base para todos los controladores
  * Proporciona métodos comunes para renderizado, redirección y manejo de errores
  */
+
+namespace App\Core;
+
 abstract class Controller
 {
     /**
@@ -10,7 +13,7 @@ abstract class Controller
      *
      * @param string $view Nombre de la vista (sin extensión .php)
      * @param array $data Datos a pasar a la vista
-     * @param string $layout Layout a usar (por defecto 'default')
+     * @param string $layout Layout a usar (por defecto 'default', también 'auth')
      * @return void
      */
     protected function render(string $view, array $data = [], string $layout = 'default'): void
@@ -19,17 +22,23 @@ abstract class Controller
         extract($data);
         
         // Determinar la ruta de la vista
-        $viewPath = $this->getViewPath($view);
+        $viewPath = $this->getViewPath($view, $layout);
         
         if (!file_exists($viewPath)) {
             $this->abort(500, 'Vista no encontrada: ' . $view);
             return;
         }
 
-        // Renderizar con layout
-        require __DIR__ . '/../views/layouts/header.php';
-        require $viewPath;
-        require __DIR__ . '/../views/layouts/footer.php';
+        // Renderizar con el layout específico
+        if ($layout === 'auth') {
+            require __DIR__ . '/../views/layouts/auth_header.php';
+            require $viewPath;
+            require __DIR__ . '/../views/layouts/auth_footer.php';
+        } else {
+            require __DIR__ . '/../views/layouts/header.php';
+            require $viewPath;
+            require __DIR__ . '/../views/layouts/footer.php';
+        }
     }
 
     /**
@@ -44,6 +53,17 @@ abstract class Controller
         http_response_code($statusCode);
         header('Location: ' . $path);
         exit;
+    }
+
+    /**
+     * Redirige de vuelta a la página anterior
+     *
+     * @return void
+     */
+    protected function redirectBack(): void
+    {
+        $referer = $_SERVER['HTTP_REFERER'] ?? '/';
+        $this->redirect($referer);
     }
 
     /**
@@ -123,12 +143,19 @@ abstract class Controller
      * Obtiene la ruta completa de una vista
      *
      * @param string $view Nombre de la vista
+     * @param string $layout Layout a usar
      * @return string Ruta completa
      */
-    private function getViewPath(string $view): string
+    private function getViewPath(string $view, string $layout = 'default'): string
     {
+        // Para vistas de auth (login, register), buscar en auth/
+        if ($layout === 'auth') {
+            return __DIR__ . "/../views/auth/{$view}.php";
+        }
+        
         // Obtener el nombre del controlador desde la clase hija
-        $controllerName = strtolower(str_replace('Controller', '', get_class($this)));
+        $className = (new \ReflectionClass($this))->getShortName();
+        $controllerName = strtolower(str_replace('Controller', '', $className));
         
         return __DIR__ . "/../views/{$controllerName}s/{$view}.php";
     }
@@ -142,6 +169,19 @@ abstract class Controller
     protected function isMethod(string $method): bool
     {
         return strtoupper($_SERVER['REQUEST_METHOD']) === strtoupper($method);
+    }
+
+    /**
+     * Valida el token CSRF en peticiones POST
+     *
+     * @return bool True si el token es válido o no es necesario
+     */
+    protected function validateCSRF(): bool
+    {
+        if ($this->isMethod('POST')) {
+            return CSRF::validate();
+        }
+        return true;
     }
 
     /**

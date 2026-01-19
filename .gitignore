@@ -1,7 +1,6 @@
 # Dependencias
 /vendor/
 node_modules/
-composer.lock
 package-lock.json
 
 # Entorno
@@ -10,7 +9,6 @@ package-lock.json
 .env.*.local
 
 # IDEs
-/.vscode/
 /.idea/
 *.sublime-project
 *.sublime-workspace
@@ -46,8 +44,8 @@ storage/cache/*
 !storage/cache/.gitkeep
 
 # Testing
-phpunit.xml
 .phpunit.result.cache
+.phpunit.cache/
 /coverage/
 
 # Build

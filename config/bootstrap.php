@@ -4,7 +4,12 @@
  * Carga todas las dependencias necesarias y inicializa la aplicación
  */
 
-// Cargar helpers primero (incluye la función env())
+// Cargar Composer autoload
+if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
+    require_once __DIR__ . '/../vendor/autoload.php';
+}
+
+// Cargar helpers globales
 require_once __DIR__ . '/../app/helpers/functions.php';
 
 // Cargar configuración de la aplicación
@@ -13,15 +18,28 @@ require_once __DIR__ . '/app.php';
 // Cargar conexión a base de datos
 require_once __DIR__ . '/database.php';
 
-// Cargar clases core
-require_once APP_PATH . '/core/Controller.php';
-require_once APP_PATH . '/core/Validator.php';
+// Iniciar sesión
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
-// Cargar modelos
-require_once APP_PATH . '/models/Student.php';
+// Registrar servicios en el contenedor
+use App\Core\Container;
+use App\Models\Student;
+use App\Controllers\StudentController;
 
-// Cargar controladores
-require_once APP_PATH . '/controllers/StudentController.php';
+// Registrar PDO como singleton
+Container::instance('PDO', $pdo);
+
+// Registrar modelos
+Container::bind(Student::class, function($c) {
+    return new Student($c::resolve('PDO'));
+}, true);
+
+// Registrar controladores
+Container::bind(StudentController::class, function($c) {
+    return new StudentController($c::resolve('PDO'));
+});
 
 // Configurar el manejo de errores personalizado
 set_error_handler(function($errno, $errstr, $errfile, $errline) {

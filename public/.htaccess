@@ -1,10 +1,42 @@
+# Habilitar el motor de reescritura
 <IfModule mod_rewrite.c>
     RewriteEngine On
-
+    RewriteBase /
+    
+    # Evitar acceso directo a archivos sensibles
+    RewriteRule ^\.env$ - [F,L]
+    
     # Servir assets almacenados fuera del document root
     RewriteRule ^assets/(.*)$ ../assets/$1 [L]
-
+    
+    # Redirigir todo a index.php excepto archivos existentes
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^ index.php [L]
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
+
+# Configuraciones de seguridad
+<IfModule mod_headers.c>
+    # Prevenir clickjacking
+    Header always set X-Frame-Options "SAMEORIGIN"
+    
+    # Prevenir MIME type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+    
+    # XSS Protection
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Referrer Policy
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Deshabilitar listado de directorios
+Options -Indexes
+
+# Configuración de PHP
+<IfModule mod_php.c>
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value max_execution_time 30
+    php_value max_input_time 30
 </IfModule>

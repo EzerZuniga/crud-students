@@ -3,6 +3,16 @@
  * Controlador de Estudiantes
  * Maneja todas las operaciones CRUD para la entidad Student
  */
+
+namespace App\Controllers;
+
+use App\Core\Controller;
+use App\Core\Validator;
+use App\Core\CSRF;
+use App\Models\Student;
+use PDO;
+use Exception;
+
 class StudentController extends Controller
 {
     private Student $model;
@@ -13,12 +23,41 @@ class StudentController extends Controller
     }
 
     /**
-     * Lista todos los estudiantes
+     * Lista todos los estudiantes con paginación y búsqueda
      */
     public function index(): void
     {
-        $students = $this->model->all();
-        $this->render('index', ['students' => $students]);
+        // Obtener parámetros de la URL
+        $page = (int) ($_GET['page'] ?? 1);
+        $perPage = (int) ($_GET['per_page'] ?? 10);
+        $search = $_GET['search'] ?? null;
+
+        // Filtros avanzados
+        $filters = [
+            'date_from' => $_GET['date_from'] ?? null,
+            'date_to' => $_GET['date_to'] ?? null,
+            'email_domain' => $_GET['email_domain'] ?? null,
+            'sort_by' => $_GET['sort_by'] ?? 'id',
+            'sort_dir' => $_GET['sort_dir'] ?? 'DESC',
+        ];
+
+        // Validar parámetros
+        $page = max(1, $page);
+        $perPage = max(5, min(50, $perPage)); // Entre 5 y 50 items por página
+
+        // Obtener datos paginados con filtros
+        $paginator = $this->model->paginate($page, $perPage, $search, $filters);
+
+        // Obtener estadísticas
+        $stats = $this->model->getStats();
+
+        $this->render('index', [
+            'students' => $paginator->items(),
+            'paginator' => $paginator,
+            'search' => $search,
+            'filters' => $filters,
+            'stats' => $stats
+        ]);
     }
 
     /**
@@ -57,7 +96,13 @@ class StudentController extends Controller
             return;
         }
 
-        // Validar datos usando la clase Validator
+        // Validar CSRF
+        if (!$this->validateCSRF()) {
+            $this->abort(419, 'Token CSRF inválido o expirado');
+            return;
+        }
+
+        // Validar datos
         $validator = new Validator($_POST);
         
         $validator
@@ -71,6 +116,7 @@ class StudentController extends Controller
             ->max('phone', MAX_PHONE_LENGTH, 'El teléfono no debe exceder ' . MAX_PHONE_LENGTH . ' caracteres');
 
         if ($validator->fails()) {
+            set_old($validator->validated());
             $this->render('create', [
                 'errors' => $validator->errors(),
                 'old' => $validator->validated()
@@ -83,9 +129,12 @@ class StudentController extends Controller
         try {
             $id = $this->model->create($data);
             app_log("Estudiante creado exitosamente con ID: {$id}", 'info');
-            $this->redirect('/');
+            flash('success', 'Estudiante creado exitosamente');
+            clear_old();
+            $this->redirect(route('students.index'));
         } catch (Exception $e) {
             app_log("Error al crear estudiante: " . $e->getMessage(), 'error');
+            set_old($data);
             $this->render('create', [
                 'errors' => ['general' => 'Error al crear el estudiante. Intenta nuevamente.'],
                 'old' => $data
@@ -118,6 +167,12 @@ class StudentController extends Controller
     {
         if (!$this->isMethod('POST')) {
             $this->redirect('/');
+            return;
+        }
+
+        // Validar CSRF
+        if (!$this->validateCSRF()) {
+            $this->abort(419, 'Token CSRF inválido o expirado');
             return;
         }
 
@@ -154,7 +209,8 @@ class StudentController extends Controller
         try {
             $this->model->update($id, $data);
             app_log("Estudiante actualizado exitosamente - ID: {$id}", 'info');
-            $this->redirect('/');
+            flash('success', 'Estudiante actualizado exitosamente');
+            $this->redirect(route('students.index'));
         } catch (Exception $e) {
             app_log("Error al actualizar estudiante: " . $e->getMessage(), 'error');
             $this->render('edit', [
@@ -174,18 +230,27 @@ class StudentController extends Controller
             return;
         }
 
+        // Validar CSRF
+        if (!$this->validateCSRF()) {
+            $this->abort(419, 'Token CSRF inválido o expirado');
+            return;
+        }
+
         try {
             $deleted = $this->model->delete($id);
             
             if ($deleted) {
                 app_log("Estudiante eliminado exitosamente - ID: {$id}", 'info');
+                flash('success', 'Estudiante eliminado exitosamente');
             } else {
                 app_log("Intento de eliminar estudiante inexistente - ID: {$id}", 'warning');
+                flash('error', 'No se pudo eliminar el estudiante');
             }
         } catch (Exception $e) {
             app_log("Error al eliminar estudiante: " . $e->getMessage(), 'error');
+            flash('error', 'Error al eliminar el estudiante');
         }
         
-        $this->redirect('/');
+        $this->redirect(route('students.index'));
     }
 }

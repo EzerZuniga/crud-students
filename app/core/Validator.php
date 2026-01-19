@@ -3,6 +3,9 @@
  * Clase para validación de datos
  * Proporciona métodos de validación reutilizables
  */
+
+namespace App\Core;
+
 class Validator
 {
     private array $errors = [];

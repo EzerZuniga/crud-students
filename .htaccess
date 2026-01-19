@@ -1,0 +1,8 @@
+# Habilitar el motor de reescritura
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Redirigir todo el tráfico a la carpeta public
+    RewriteRule ^$ public/ [L]
+    RewriteRule (.*) public/$1 [L]
+</IfModule>
