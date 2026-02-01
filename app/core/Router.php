@@ -1,189 +1,171 @@
 <?php
-/**
- * Router - Sistema de enrutamiento moderno
- * Maneja las rutas de la aplicación de forma limpia
- */
 
 namespace App\Core;
 
 class Router
 {
+    private const HTTP_METHOD_GET = 'GET';
+    private const HTTP_METHOD_POST = 'POST';
+    private const HTTP_NOT_FOUND = 404;
+    private const DEFAULT_URI = '/';
+    private const REGEX_PARAM_PATTERN = '/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/';
+    private const REGEX_PARAM_REPLACEMENT = '(?P<$1>[^/]+)';
+    private const ERROR_NOT_FOUND = 'Ruta no encontrada';
+
     private array $routes = [];
     private $notFoundHandler = null;
 
-    /**
-     * Registra una ruta GET
-     *
-     * @param string $path Ruta de la URL
-     * @param callable|array $handler Controlador y método
-     * @param array|callable|null $middleware Middleware opcional
-     * @return self
-     */
     public function get(string $path, callable|array $handler, array|callable|null $middleware = null): self
     {
-        $this->addRoute('GET', $path, $handler, $middleware);
+        $this->addRoute(self::HTTP_METHOD_GET, $path, $handler, $middleware);
         return $this;
     }
 
-    /**
-     * Registra una ruta POST
-     *
-     * @param string $path Ruta de la URL
-     * @param callable|array $handler Controlador y método
-     * @param array|callable|null $middleware Middleware opcional
-     * @return self
-     */
     public function post(string $path, callable|array $handler, array|callable|null $middleware = null): self
     {
-        $this->addRoute('POST', $path, $handler, $middleware);
+        $this->addRoute(self::HTTP_METHOD_POST, $path, $handler, $middleware);
         return $this;
     }
 
-    /**
-     * Registra una ruta que acepta GET y POST
-     *
-     * @param string $path Ruta de la URL
-     * @param callable|array $handler Controlador y método
-     * @param array|callable|null $middleware Middleware opcional
-     * @return self
-     */
     public function any(string $path, callable|array $handler, array|callable|null $middleware = null): self
     {
-        $this->addRoute('GET', $path, $handler, $middleware);
-        $this->addRoute('POST', $path, $handler, $middleware);
+        $this->addRoute(self::HTTP_METHOD_GET, $path, $handler, $middleware);
+        $this->addRoute(self::HTTP_METHOD_POST, $path, $handler, $middleware);
         return $this;
     }
 
-    /**
-     * Agrega una ruta al registro
-     *
-     * @param string $method Método HTTP
-     * @param string $path Ruta
-     * @param callable|array $handler Manejador
-     * @param array|callable|null $middleware Middleware
-     * @return void
-     */
+    public function notFound(callable $handler): self
+    {
+        $this->notFoundHandler = $handler;
+        return $this;
+    }
+
+    public function dispatch(string $uri, string $method = self::HTTP_METHOD_GET): mixed
+    {
+        $uri = $this->normalizeUri($uri);
+        $route = $this->findRoute($uri, $method);
+
+        if ($route === null) {
+            return $this->handleNotFound();
+        }
+
+        $params = $this->extractParams($route['pattern'], $uri);
+        $this->executeMiddleware($route['middleware']);
+
+        return $this->callHandler($route['handler'], $params);
+    }
+
     private function addRoute(string $method, string $path, callable|array $handler, array|callable|null $middleware = null): void
     {
         $pattern = $this->convertToRegex($path);
         $this->routes[$method][$pattern] = [
             'path' => $path,
+            'pattern' => $pattern,
             'handler' => $handler,
             'middleware' => $middleware
         ];
     }
 
-    /**
-     * Convierte una ruta a expresión regular
-     *
-     * @param string $path Ruta a convertir
-     * @return string Expresión regular
-     */
     private function convertToRegex(string $path): string
     {
-        // Escapar caracteres especiales excepto { }
-        $pattern = preg_replace('/\{([a-zA-Z_][a-zA-Z0-9_]*)\}/', '(?P<$1>[^/]+)', $path);
+        $pattern = preg_replace(self::REGEX_PARAM_PATTERN, self::REGEX_PARAM_REPLACEMENT, $path);
         $pattern = str_replace('/', '\/', $pattern);
         return '/^' . $pattern . '$/';
     }
 
-    /**
-     * Despacha la petición a la ruta correspondiente
-     *
-     * @param string $uri URI solicitada
-     * @param string $method Método HTTP
-     * @return mixed
-     */
-    public function dispatch(string $uri, string $method = 'GET'): mixed
+    private function normalizeUri(string $uri): string
     {
-        // Limpiar la URI
-        $uri = parse_url($uri, PHP_URL_PATH);
-        $uri = rtrim($uri, '/') ?: '/';
+        $uri = parse_url($uri, PHP_URL_PATH) ?? self::DEFAULT_URI;
+        return rtrim($uri, '/') ?: self::DEFAULT_URI;
+    }
 
-        // Buscar coincidencia
-        if (isset($this->routes[$method])) {
-            foreach ($this->routes[$method] as $pattern => $route) {
-                if (preg_match($pattern, $uri, $matches)) {
-                    // Extraer parámetros
-                    $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
-                    
-                    // Ejecutar middleware si existe
-                    if (isset($route['middleware']) && $route['middleware']) {
-                        $this->runMiddleware($route['middleware']);
-                    }
-                    
-                    return $this->callHandler($route['handler'], $params);
-                }
+    private function findRoute(string $uri, string $method): ?array
+    {
+        if (!isset($this->routes[$method])) {
+            return null;
+        }
+
+        foreach ($this->routes[$method] as $pattern => $route) {
+            if (preg_match($pattern, $uri)) {
+                return $route;
             }
         }
 
-        // No encontrado
-        return $this->handleNotFound();
+        return null;
     }
 
-    /**
-     * Ejecuta el middleware antes de la ruta
-     *
-     * @param array|callable $middleware Middleware a ejecutar
-     * @return void
-     */
-    private function runMiddleware(array|callable $middleware): void
+    private function extractParams(string $pattern, string $uri): array
     {
+        if (!preg_match($pattern, $uri, $matches)) {
+            return [];
+        }
+
+        return array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+    }
+
+    private function executeMiddleware(array|callable|null $middleware): void
+    {
+        if ($middleware === null) {
+            return;
+        }
+
         if (is_callable($middleware)) {
             call_user_func($middleware);
-        } elseif (is_array($middleware)) {
-            [$class, $method] = $middleware;
-            call_user_func([$class, $method]);
+            return;
+        }
+
+        if (is_array($middleware)) {
+            $this->callArrayMiddleware($middleware);
         }
     }
 
-    /**
-     * Llama al manejador de la ruta
-     *
-     * @param callable|array $handler Manejador
-     * @param array $params Parámetros de la ruta
-     * @return mixed
-     */
+    private function callArrayMiddleware(array $middleware): void
+    {
+        [$class, $method] = $middleware;
+        call_user_func([$class, $method]);
+    }
+
     private function callHandler(callable|array $handler, array $params = []): mixed
     {
-        if (is_array($handler)) {
-            [$controller, $method] = $handler;
-            
-            // Obtener instancia del controlador desde el contenedor
-            $instance = Container::resolve($controller);
-            
-            return call_user_func_array([$instance, $method], $params);
+        if (is_callable($handler)) {
+            return call_user_func_array($handler, $params);
         }
 
-        return call_user_func_array($handler, $params);
+        if (is_array($handler)) {
+            return $this->callControllerHandler($handler, $params);
+        }
+
+        return null;
     }
 
-    /**
-     * Maneja cuando no se encuentra la ruta
-     *
-     * @return mixed
-     */
+    private function callControllerHandler(array $handler, array $params): mixed
+    {
+        [$controller, $method] = $handler;
+        $instance = $this->resolveController($controller);
+
+        return call_user_func_array([$instance, $method], $params);
+    }
+
+    private function resolveController(string $controller): object
+    {
+        return Container::resolve($controller);
+    }
+
     private function handleNotFound(): mixed
     {
-        http_response_code(404);
-        
-        if ($this->notFoundHandler) {
+        http_response_code(self::HTTP_NOT_FOUND);
+
+        if ($this->notFoundHandler !== null) {
             return call_user_func($this->notFoundHandler);
         }
 
-        echo json_encode(['error' => 'Ruta no encontrada']);
-        exit;
+        $this->defaultNotFoundResponse();
+        return null;
     }
 
-    /**
-     * Define el manejador de 404
-     *
-     * @param callable $handler Manejador
-     * @return self
-     */
-    public function notFound(callable $handler): self
+    private function defaultNotFoundResponse(): void
     {
-        $this->notFoundHandler = $handler;
-        return $this;
+        echo json_encode(['error' => self::ERROR_NOT_FOUND]);
+        exit;
     }
 }

@@ -1,138 +1,129 @@
 <?php require_once __DIR__ . '/../layouts/auth_header.php'; ?>
 
-<div class="container">
+<?php
+const ALERT_SUCCESS = 'success';
+const ALERT_WARNING = 'warning';
+const ALERT_DANGER = 'danger';
+
+const FIELD_USERNAME = 'username';
+const FIELD_PASSWORD = 'password';
+const FIELD_REMEMBER = 'remember';
+const ERROR_GENERAL = 'general';
+
+const PLACEHOLDER_USERNAME = 'ej. admin';
+const LABEL_USERNAME = 'Usuario o Email';
+const LABEL_PASSWORD = 'Contraseña';
+const LABEL_REMEMBER = 'Recordarme';
+
+const TITLE_LOGIN = 'Iniciar Sesión';
+const SUBTITLE_LOGIN = 'Ingresa tus credenciales para acceder';
+const BUTTON_LOGIN = 'Ingresar';
+const FOOTER_TEXT = 'Sistema de Gestión de Estudiantes';
+
+function renderAlert(string $type, string $message): void
+{
+    $alertClass = "alert alert-{$type} alert-dismissible fade show";
+    echo "<div class=\"{$alertClass}\" role=\"alert\">" . e($message) . 
+         '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>';
+}
+
+function renderFlashMessages(array $errors): void
+{
+    if ($successMsg = flash(ALERT_SUCCESS)) {
+        renderAlert(ALERT_SUCCESS, $successMsg);
+    }
+
+    if ($warningMsg = flash(ALERT_WARNING)) {
+        renderAlert(ALERT_WARNING, $warningMsg);
+    }
+
+    if (isset($errors[ERROR_GENERAL])) {
+        renderAlert(ALERT_DANGER, $errors[ERROR_GENERAL]);
+    }
+}
+
+function renderInputField(string $id, string $type, string $label, string $placeholder = '', bool $required = true, bool $autofocus = false, string $icon = ''): void
+{
+    $oldValue = old($id);
+    $autofocusAttr = $autofocus ? 'autofocus' : '';
+    $requiredAttr = $required ? 'required' : '';
+    
+    echo "<div class=\"mb-3\">
+            <label for=\"{$id}\" class=\"form-label\">{$label}</label>
+            <div class=\"input-group\">
+                <span class=\"input-group-text\"><i class=\"bi {$icon}\"></i></span>
+                <input type=\"{$type}\" 
+                       class=\"form-control\" 
+                       id=\"{$id}\" 
+                       name=\"{$id}\" 
+                       value=\"" . e($oldValue) . "\" 
+                       placeholder=\"{$placeholder}\" 
+                       {$requiredAttr} 
+                       {$autofocusAttr}>
+            </div>
+          </div>";
+}
+
+function renderPasswordField(string $id, string $label): void
+{
+    echo "<div class=\"mb-4\">
+            <div class=\"d-flex justify-content-between\">
+                <label for=\"{$id}\" class=\"form-label\">{$label}</label>
+            </div>
+            <div class=\"input-group\">
+                <span class=\"input-group-text\"><i class=\"bi bi-lock\"></i></span>
+                <input type=\"password\" 
+                       class=\"form-control\" 
+                       id=\"{$id}\" 
+                       name=\"{$id}\" 
+                       placeholder=\"••••••••\"
+                       required>
+            </div>
+          </div>";
+}
+
+function renderCheckbox(string $id, string $label): void
+{
+    echo "<div class=\"form-check\">
+            <input class=\"form-check-input\" type=\"checkbox\" id=\"{$id}\" name=\"{$id}\">
+            <label class=\"form-check-label text-sm\" for=\"{$id}\">{$label}</label>
+          </div>";
+}
+?>
+
+<div class="auth-wrapper">
     <div class="auth-card">
         <div class="auth-header">
-            <i class="bi bi-person-circle" style="font-size: 3rem;"></i>
-            <h1 class="mt-2">Iniciar Sesión</h1>
-            <p class="mb-0">Accede a tu cuenta</p>
+            <i class="bi bi-mortarboard-fill" style="font-size: 3rem; margin-bottom: 0.5rem; display: block;"></i>
+            <h1><?= TITLE_LOGIN ?></h1>
+            <p><?= SUBTITLE_LOGIN ?></p>
         </div>
         
         <div class="auth-body">
-            <?php if (flash('success')): ?>
-                <div class="alert alert-success alert-dismissible fade show" role="alert">
-                    <i class="bi bi-check-circle me-2"></i><?= e(flash('success')) ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            <?php endif; ?>
+            <?php renderFlashMessages($errors ?? []); ?>
 
-            <?php if (flash('warning')): ?>
-                <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                    <i class="bi bi-exclamation-triangle me-2"></i><?= e(flash('warning')) ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            <?php endif; ?>
-
-            <?php if (isset($errors['general'])): ?>
-                <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                    <i class="bi bi-exclamation-octagon me-2"></i><?= e($errors['general']) ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            <?php endif; ?>
-
-            <form method="POST" action="<?= route('auth.login.post') ?>" class="needs-validation" novalidate>
+            <form method="POST" action="<?= route('auth.login.post') ?>" class="needs-validation" novalidate autocomplete="on">
                 <?= csrf_field() ?>
                 
-                <div class="mb-3">
-                    <label for="username" class="form-label">
-                        <i class="bi bi-person me-1"></i>Usuario o Email
-                    </label>
-                    <input 
-                        type="text" 
-                        class="form-control <?= isset($errors['username']) ? 'is-invalid' : '' ?>" 
-                        id="username" 
-                        name="username" 
-                        value="<?= e($old['username'] ?? '') ?>"
-                        placeholder="Ingresa tu usuario o email"
-                        required
-                        autofocus
-                    >
-                    <?php if (isset($errors['username'])): ?>
-                        <div class="invalid-feedback d-block">
-                            <?= e($errors['username']) ?>
-                        </div>
-                    <?php endif; ?>
+                <?php renderInputField(FIELD_USERNAME, 'text', LABEL_USERNAME, PLACEHOLDER_USERNAME, true, true, 'bi-person'); ?>
+                <?php renderPasswordField(FIELD_PASSWORD, LABEL_PASSWORD); ?>
+
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <?php renderCheckbox(FIELD_REMEMBER, LABEL_REMEMBER); ?>
                 </div>
 
-                <div class="mb-3">
-                    <label for="password" class="form-label">
-                        <i class="bi bi-lock me-1"></i>Contraseña
-                    </label>
-                    <div class="input-group">
-                        <input 
-                            type="password" 
-                            class="form-control <?= isset($errors['password']) ? 'is-invalid' : '' ?>" 
-                            id="password" 
-                            name="password" 
-                            placeholder="Ingresa tu contraseña"
-                            required
-                        >
-                        <button class="btn btn-outline-secondary" type="button" id="togglePassword">
-                            <i class="bi bi-eye" id="eyeIcon"></i>
-                        </button>
-                        <?php if (isset($errors['password'])): ?>
-                            <div class="invalid-feedback d-block">
-                                <?= e($errors['password']) ?>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-
-                <div class="mb-3 form-check">
-                    <input type="checkbox" class="form-check-input" id="remember" name="remember">
-                    <label class="form-check-label" for="remember">
-                        Recordarme
-                    </label>
-                </div>
-
-                <button type="submit" class="btn btn-primary w-100 mb-3">
-                    <i class="bi bi-box-arrow-in-right me-2"></i>Iniciar Sesión
-                </button>
-
-                <div class="text-center">
-                    <p class="mb-0">
-                        ¿No tienes cuenta? 
-                        <a href="<?= route('auth.register') ?>" class="text-decoration-none fw-bold">
-                            Regístrate aquí
-                        </a>
-                    </p>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-box-arrow-in-right me-2"></i><?= BUTTON_LOGIN ?>
+                    </button>
                 </div>
             </form>
         </div>
+
+        <div class="text-center py-3" style="border-top: 1px solid #e5e7eb; margin-top: 1rem;">
+            <small class="text-muted"><?= FOOTER_TEXT ?> &copy; <?= date('Y') ?></small>
+        </div>
     </div>
 </div>
-
-<script>
-    // Toggle password visibility
-    document.getElementById('togglePassword').addEventListener('click', function() {
-        const password = document.getElementById('password');
-        const eyeIcon = document.getElementById('eyeIcon');
-        
-        if (password.type === 'password') {
-            password.type = 'text';
-            eyeIcon.classList.remove('bi-eye');
-            eyeIcon.classList.add('bi-eye-slash');
-        } else {
-            password.type = 'password';
-            eyeIcon.classList.remove('bi-eye-slash');
-            eyeIcon.classList.add('bi-eye');
-        }
-    });
-
-    // Bootstrap form validation
-    (function() {
-        'use strict';
-        const forms = document.querySelectorAll('.needs-validation');
-        Array.from(forms).forEach(function(form) {
-            form.addEventListener('submit', function(event) {
-                if (!form.checkValidity()) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                }
-                form.classList.add('was-validated');
-            }, false);
-        });
-    })();
-</script>
 
 <?php require_once __DIR__ . '/../layouts/auth_footer.php'; ?>

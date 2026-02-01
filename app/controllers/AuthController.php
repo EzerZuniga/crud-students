@@ -1,8 +1,4 @@
 <?php
-/**
- * Auth Controller
- * Maneja la autenticación de usuarios
- */
 
 namespace App\Controllers;
 
@@ -16,6 +12,21 @@ use Exception;
 
 class AuthController extends Controller
 {
+    private const MSG_INVALID_CREDENTIALS = 'Credenciales incorrectas';
+    private const MSG_INVALID_CSRF = 'Token CSRF inválido';
+    private const MSG_PASSWORDS_MISMATCH = 'Las contraseñas no coinciden';
+    private const MSG_USERNAME_EXISTS = 'El nombre de usuario ya está en uso';
+    private const MSG_EMAIL_EXISTS = 'El correo electrónico ya está registrado';
+    private const MSG_REGISTRATION_ERROR = 'Error al crear la cuenta. Intenta nuevamente.';
+    private const MSG_NO_PERMISSION = 'No tienes permisos para realizar esta acción.';
+    private const MSG_LOGIN_REQUIRED = 'Debes iniciar sesión para acceder a esta página.';
+    private const MSG_ADMIN_REQUIRED = 'No tienes permisos para registrar nuevos usuarios.';
+    
+    private const MIN_USERNAME_LENGTH = 3;
+    private const MAX_USERNAME_LENGTH = 50;
+    private const MIN_PASSWORD_LENGTH = 6;
+    private const DEFAULT_ROLE = 'user';
+
     private User $userModel;
     private Role $roleModel;
 
@@ -25,12 +36,8 @@ class AuthController extends Controller
         $this->roleModel = new Role($db);
     }
 
-    /**
-     * Muestra el formulario de login
-     */
     public function showLogin(): void
     {
-        // Si ya está autenticado, redirigir al inicio
         if (auth_check()) {
             $this->redirect(route('students.index'));
             return;
@@ -42,9 +49,6 @@ class AuthController extends Controller
         ], 'auth');
     }
 
-    /**
-     * Procesa el login
-     */
     public function login(): void
     {
         if (!$this->isMethod('POST')) {
@@ -52,63 +56,48 @@ class AuthController extends Controller
             return;
         }
 
-        // Validar CSRF
         if (!$this->validateCSRF()) {
-            $this->abort(419, 'Token CSRF inválido');
+            $this->abort(419, self::MSG_INVALID_CSRF);
             return;
         }
 
-        // Validar datos
-        $validator = new Validator($_POST);
-        
-        $validator
-            ->required('username', 'El usuario es obligatorio')
-            ->required('password', 'La contraseña es obligatoria');
+        $validator = $this->validateLoginData($_POST);
 
         if ($validator->fails()) {
-            $this->render('login', [
-                'errors' => $validator->errors(),
-                'old' => $validator->validated()
-            ], 'auth');
+            $this->renderLoginWithErrors($validator->errors(), $validator->validated());
             return;
         }
 
         $data = $validator->validated();
         
-        // Intentar autenticar
-        $user = $this->userModel->authenticate($data['username'], $data['password']);
-        
-        if (!$user) {
-            $this->render('login', [
-                'errors' => ['general' => 'Credenciales incorrectas'],
-                'old' => ['username' => $data['username']]
-            ], 'auth');
-            return;
+        try {
+            $user = $this->authenticateUser($data['username'], $data['password']);
+            
+            if (!$user) {
+                $this->renderLoginWithErrors(
+                    ['general' => self::MSG_INVALID_CREDENTIALS],
+                    ['username' => $data['username']]
+                );
+                return;
+            }
+
+            $user = $this->loadUserData($user);
+            $this->startUserSession($user);
+            
+        } catch (Exception $e) {
+            app_log("Error en login: " . $e->getMessage(), 'error');
+            $this->renderLoginWithErrors(
+                ['general' => 'Error al procesar el inicio de sesión. Intenta nuevamente.'],
+                ['username' => $data['username']]
+            );
         }
-
-        // Obtener roles del usuario
-        $roles = $this->userModel->getRoles($user['id']);
-        $user['roles'] = $roles;
-
-        // Obtener permisos del usuario
-        $permissions = $this->userModel->getPermissions($user['id']);
-        $user['permissions'] = $permissions;
-
-        // Guardar en sesión
-        auth_login($user);
-        
-        app_log("Usuario {$user['username']} inició sesión", 'info');
-        flash('success', "¡Bienvenido, {$user['full_name']}!");
-        
-        $this->redirect(route('students.index'));
     }
 
-    /**
-     * Procesa el logout
-     */
     public function logout(): void
     {
-        $username = auth_user()['username'] ?? 'unknown';
+        $user = auth_user();
+        $username = $user['username'] ?? 'unknown';
+        
         auth_logout();
         
         app_log("Usuario {$username} cerró sesión", 'info');
@@ -117,13 +106,16 @@ class AuthController extends Controller
         $this->redirect(route('auth.login'));
     }
 
-    /**
-     * Muestra el formulario de registro
-     */
     public function showRegister(): void
     {
-        // Si ya está autenticado, redirigir
-        if (auth_check()) {
+        if (!auth_check()) {
+            flash('warning', self::MSG_LOGIN_REQUIRED);
+            $this->redirect(route('auth.login'));
+            return;
+        }
+
+        if (!auth_is_admin()) {
+            flash('error', self::MSG_ADMIN_REQUIRED);
             $this->redirect(route('students.index'));
             return;
         }
@@ -131,96 +123,184 @@ class AuthController extends Controller
         $this->render('register', [
             'errors' => [],
             'old' => []
-        ], 'auth');
+        ]);
     }
 
-    /**
-     * Procesa el registro
-     */
     public function register(): void
     {
+        if (!$this->verifyAdminAccess()) {
+            return;
+        }
+
         if (!$this->isMethod('POST')) {
             $this->redirect(route('auth.register'));
             return;
         }
 
-        // Validar CSRF
         if (!$this->validateCSRF()) {
-            $this->abort(419, 'Token CSRF inválido');
+            $this->abort(419, self::MSG_INVALID_CSRF);
             return;
         }
 
-        // Validar datos
-        $validator = new Validator($_POST);
-        
-        $validator
-            ->required('username', 'El nombre de usuario es obligatorio')
-            ->min('username', 3, 'El usuario debe tener al menos 3 caracteres')
-            ->max('username', 50, 'El usuario no debe exceder 50 caracteres')
-            ->required('email', 'El correo es obligatorio')
-            ->email('email', 'Formato de correo inválido')
-            ->required('full_name', 'El nombre completo es obligatorio')
-            ->required('password', 'La contraseña es obligatoria')
-            ->min('password', 6, 'La contraseña debe tener al menos 6 caracteres')
-            ->required('password_confirmation', 'Debes confirmar la contraseña');
+        $validator = $this->validateRegistrationData($_POST);
 
         if ($validator->fails()) {
-            $this->render('register', [
-                'errors' => $validator->errors(),
-                'old' => $validator->validated()
-            ], 'auth');
+            $this->renderRegisterWithErrors($validator->errors(), $validator->validated());
             return;
         }
 
         $data = $validator->validated();
         
-        // Verificar que las contraseñas coincidan
-        if ($data['password'] !== $data['password_confirmation']) {
-            $this->render('register', [
-                'errors' => ['password_confirmation' => 'Las contraseñas no coinciden'],
-                'old' => $data
-            ], 'auth');
+        if (!$this->passwordsMatch($data['password'], $data['password_confirmation'])) {
+            $this->renderRegisterWithErrors(
+                ['password_confirmation' => self::MSG_PASSWORDS_MISMATCH],
+                $data
+            );
             return;
         }
 
-        // Verificar que el username no exista
-        if ($this->userModel->findByUsername($data['username'])) {
-            $this->render('register', [
-                'errors' => ['username' => 'El nombre de usuario ya está en uso'],
-                'old' => $data
-            ], 'auth');
+        if ($this->usernameExists($data['username'])) {
+            $this->renderRegisterWithErrors(
+                ['username' => self::MSG_USERNAME_EXISTS],
+                $data
+            );
             return;
         }
 
-        // Verificar que el email no exista
-        if ($this->userModel->findByEmail($data['email'])) {
-            $this->render('register', [
-                'errors' => ['email' => 'El correo electrónico ya está registrado'],
-                'old' => $data
-            ], 'auth');
+        if ($this->emailExists($data['email'])) {
+            $this->renderRegisterWithErrors(
+                ['email' => self::MSG_EMAIL_EXISTS],
+                $data
+            );
             return;
         }
 
         try {
-            // Crear usuario
-            $userId = $this->userModel->create($data);
+            $userId = $this->createUserWithRole($data);
             
-            // Asignar rol de usuario por defecto
-            $userRole = $this->roleModel->findByName('user');
-            if ($userRole) {
-                $this->userModel->assignRole($userId, $userRole['id']);
-            }
+            $this->logUserRegistration($data['username']);
+            flash('success', "Usuario '{$data['username']}' creado exitosamente.");
             
-            app_log("Nuevo usuario registrado: {$data['username']}", 'info');
-            flash('success', '¡Cuenta creada exitosamente! Ahora puedes iniciar sesión.');
-            
-            $this->redirect(route('auth.login'));
+            $this->redirect(route('students.index'));
         } catch (Exception $e) {
             app_log("Error al registrar usuario: " . $e->getMessage(), 'error');
-            $this->render('register', [
-                'errors' => ['general' => 'Error al crear la cuenta. Intenta nuevamente.'],
-                'old' => $data
-            ], 'auth');
+            $this->renderRegisterWithErrors(
+                ['general' => self::MSG_REGISTRATION_ERROR],
+                $data
+            );
         }
+    }
+
+    private function validateLoginData(array $data): Validator
+    {
+        $validator = new Validator($data);
+        
+        $validator
+            ->required('username', 'El usuario es obligatorio')
+            ->required('password', 'La contraseña es obligatoria');
+
+        return $validator;
+    }
+
+    private function validateRegistrationData(array $data): Validator
+    {
+        $validator = new Validator($data);
+        
+        $validator
+            ->required('username', 'El nombre de usuario es obligatorio')
+            ->min('username', self::MIN_USERNAME_LENGTH, "El usuario debe tener al menos " . self::MIN_USERNAME_LENGTH . " caracteres")
+            ->max('username', self::MAX_USERNAME_LENGTH, "El usuario no debe exceder " . self::MAX_USERNAME_LENGTH . " caracteres")
+            ->required('email', 'El correo es obligatorio')
+            ->email('email', 'Formato de correo inválido')
+            ->required('full_name', 'El nombre completo es obligatorio')
+            ->required('password', 'La contraseña es obligatoria')
+            ->min('password', self::MIN_PASSWORD_LENGTH, "La contraseña debe tener al menos " . self::MIN_PASSWORD_LENGTH . " caracteres")
+            ->required('password_confirmation', 'Debes confirmar la contraseña');
+
+        return $validator;
+    }
+
+    private function authenticateUser(string $username, string $password): array|false
+    {
+        return $this->userModel->authenticate($username, $password);
+    }
+
+    private function loadUserData(array $user): array
+    {
+        $user['roles'] = $this->userModel->getRoles($user['id']);
+        $user['permissions'] = $this->userModel->getPermissions($user['id']);
+        
+        return $user;
+    }
+
+    private function startUserSession(array $user): void
+    {
+        auth_login($user);
+        
+        app_log("Usuario {$user['username']} inició sesión", 'info');
+        flash('success', "¡Bienvenido, {$user['full_name']}!");
+        
+        $this->redirect(route('students.index'));
+    }
+
+    private function verifyAdminAccess(): bool
+    {
+        if (!auth_check() || !auth_is_admin()) {
+            flash('error', self::MSG_NO_PERMISSION);
+            $this->redirect(route('auth.login'));
+            return false;
+        }
+        
+        return true;
+    }
+
+    private function passwordsMatch(string $password, string $confirmation): bool
+    {
+        return $password === $confirmation;
+    }
+
+    private function usernameExists(string $username): bool
+    {
+        return (bool) $this->userModel->findByUsername($username);
+    }
+
+    private function emailExists(string $email): bool
+    {
+        return (bool) $this->userModel->findByEmail($email);
+    }
+
+    private function createUserWithRole(array $data): int
+    {
+        $userId = $this->userModel->create($data);
+        
+        $userRole = $this->roleModel->findByName(self::DEFAULT_ROLE);
+        if ($userRole) {
+            $this->userModel->assignRole($userId, $userRole['id']);
+        }
+        
+        return $userId;
+    }
+
+    private function logUserRegistration(string $username): void
+    {
+        $adminUser = auth_user();
+        $adminName = $adminUser['full_name'] ?? 'Administrador';
+        app_log("Usuario {$username} registrado por {$adminName}", 'info');
+    }
+
+    private function renderLoginWithErrors(array $errors, array $oldData): void
+    {
+        $this->render('login', [
+            'errors' => $errors,
+            'old' => $oldData
+        ], 'auth');
+    }
+
+    private function renderRegisterWithErrors(array $errors, array $oldData): void
+    {
+        $this->render('register', [
+            'errors' => $errors,
+            'old' => $oldData
+        ]);
     }
 }

@@ -1,8 +1,4 @@
 <?php
-/**
- * Clase para manejo de tokens CSRF
- * Protección contra ataques Cross-Site Request Forgery
- */
 
 namespace App\Core;
 
@@ -10,57 +6,36 @@ class CSRF
 {
     private const TOKEN_NAME = 'csrf_token';
     private const TOKEN_TIME_NAME = 'csrf_token_time';
-    private const TOKEN_LIFETIME = 3600; // 1 hora
+    private const TOKEN_LIFETIME = 3600;
+    private const TOKEN_LENGTH = 32;
+    private const HTML_ENCODING = 'UTF-8';
 
-    /**
-     * Genera un nuevo token CSRF
-     *
-     * @return string Token generado
-     */
     public static function generateToken(): string
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+        self::ensureSessionStarted();
 
-        $token = bin2hex(random_bytes(32));
-        $_SESSION[self::TOKEN_NAME] = $token;
-        $_SESSION[self::TOKEN_TIME_NAME] = time();
+        $token = self::createRandomToken();
+        self::storeToken($token);
 
         return $token;
     }
 
-    /**
-     * Obtiene el token CSRF actual o genera uno nuevo
-     *
-     * @return string Token CSRF
-     */
     public static function getToken(): string
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+        self::ensureSessionStarted();
 
-        if (!isset($_SESSION[self::TOKEN_NAME]) || self::isTokenExpired()) {
+        if (!self::hasValidToken()) {
             return self::generateToken();
         }
 
         return $_SESSION[self::TOKEN_NAME];
     }
 
-    /**
-     * Valida un token CSRF
-     *
-     * @param string|null $token Token a validar
-     * @return bool True si el token es válido
-     */
     public static function validateToken(?string $token): bool
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+        self::ensureSessionStarted();
 
-        if (!$token || !isset($_SESSION[self::TOKEN_NAME])) {
+        if (!self::canValidateToken($token)) {
             return false;
         }
 
@@ -69,14 +44,57 @@ class CSRF
             return false;
         }
 
-        return hash_equals($_SESSION[self::TOKEN_NAME], $token);
+        return self::tokensMatch($_SESSION[self::TOKEN_NAME], $token);
     }
 
-    /**
-     * Verifica si el token ha expirado
-     *
-     * @return bool True si el token ha expirado
-     */
+    public static function destroyToken(): void
+    {
+        self::ensureSessionStarted();
+        self::removeTokenFromSession();
+    }
+
+    public static function field(): string
+    {
+        $token = self::getToken();
+        return self::generateHiddenField($token);
+    }
+
+    public static function validate(): bool
+    {
+        $token = self::getTokenFromRequest();
+        return self::validateToken($token);
+    }
+
+    private static function ensureSessionStarted(): void
+    {
+        if (!self::isSessionActive()) {
+            session_start();
+        }
+    }
+
+    private static function isSessionActive(): bool
+    {
+        return session_status() === PHP_SESSION_ACTIVE;
+    }
+
+    private static function createRandomToken(): string
+    {
+        // @phpstan-ignore-next-line - random_bytes is a native PHP function
+        $bytes = \random_bytes(self::TOKEN_LENGTH);
+        return \bin2hex($bytes);
+    }
+
+    private static function storeToken(string $token): void
+    {
+        $_SESSION[self::TOKEN_NAME] = $token;
+        $_SESSION[self::TOKEN_TIME_NAME] = time();
+    }
+
+    private static function hasValidToken(): bool
+    {
+        return isset($_SESSION[self::TOKEN_NAME]) && !self::isTokenExpired();
+    }
+
     private static function isTokenExpired(): bool
     {
         if (!isset($_SESSION[self::TOKEN_TIME_NAME])) {
@@ -86,39 +104,34 @@ class CSRF
         return (time() - $_SESSION[self::TOKEN_TIME_NAME]) > self::TOKEN_LIFETIME;
     }
 
-    /**
-     * Destruye el token CSRF actual
-     *
-     * @return void
-     */
-    public static function destroyToken(): void
+    private static function canValidateToken(?string $token): bool
     {
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
+        return $token !== null && isset($_SESSION[self::TOKEN_NAME]);
+    }
 
+    private static function tokensMatch(string $storedToken, string $providedToken): bool
+    {
+        return hash_equals($storedToken, $providedToken);
+    }
+
+    private static function removeTokenFromSession(): void
+    {
         unset($_SESSION[self::TOKEN_NAME], $_SESSION[self::TOKEN_TIME_NAME]);
     }
 
-    /**
-     * Genera el campo oculto HTML para el formulario
-     *
-     * @return string HTML del campo oculto
-     */
-    public static function field(): string
+    private static function generateHiddenField(string $token): string
     {
-        $token = self::getToken();
-        return '<input type="hidden" name="' . self::TOKEN_NAME . '" value="' . htmlspecialchars($token, ENT_QUOTES, 'UTF-8') . '">';
+        $escapedToken = self::escapeHtml($token);
+        return '<input type="hidden" name="' . self::TOKEN_NAME . '" value="' . $escapedToken . '">';
     }
 
-    /**
-     * Valida el token desde la petición POST
-     *
-     * @return bool True si el token es válido
-     */
-    public static function validate(): bool
+    private static function escapeHtml(string $value): string
     {
-        $token = $_POST[self::TOKEN_NAME] ?? null;
-        return self::validateToken($token);
+        return htmlspecialchars($value, ENT_QUOTES, self::HTML_ENCODING);
+    }
+
+    private static function getTokenFromRequest(): ?string
+    {
+        return $_POST[self::TOKEN_NAME] ?? null;
     }
 }

@@ -1,8 +1,4 @@
 <?php
-/**
- * Modelo Student
- * Representa la entidad estudiante y maneja las operaciones de base de datos
- */
 
 namespace App\Models;
 
@@ -12,396 +8,390 @@ use App\Core\Paginator;
 
 class Student
 {
+    private const TABLE = 'students';
+    
+    private const COLUMN_ID = 'id';
+    private const COLUMN_NAME = 'name';
+    private const COLUMN_EMAIL = 'email';
+    private const COLUMN_PHONE = 'phone';
+    private const COLUMN_CREATED_AT = 'created_at';
+    
+    private const DEFAULT_ORDER = 'id DESC';
+    private const DEFAULT_PER_PAGE = 10;
+    private const SEARCH_LIMIT = 50;
+    
+    private const SORT_BY_ID = 'id';
+    private const SORT_BY_NAME = 'name';
+    private const SORT_BY_EMAIL = 'email';
+    private const SORT_BY_DATE = 'date';
+    
+    private const SORT_DIR_ASC = 'ASC';
+    private const SORT_DIR_DESC = 'DESC';
+    
+    private const STAT_TOTAL = 'total';
+    private const STAT_TODAY = 'today';
+    private const STAT_WEEK = 'week';
+    private const STAT_MONTH = 'month';
+    private const STAT_EMAIL_DOMAINS = 'email_domains';
+    
+    private const LOG_ERROR_ALL = 'Error al obtener estudiantes: ';
+    private const LOG_ERROR_PAGINATE = 'Error al paginar estudiantes: ';
+    private const LOG_ERROR_SEARCH = 'Error searching students: ';
+    private const LOG_ERROR_STATS = 'Error getting stats: ';
+    private const LOG_ERROR_COUNT = 'Error al contar estudiantes: ';
+    private const LOG_ERROR_FIND = 'Error al buscar estudiante ID %d: ';
+    private const LOG_ERROR_EMAIL_CHECK = 'Error al verificar email: ';
+
     private PDO $db;
-    private string $table = 'students';
 
     public function __construct(PDO $db)
     {
         $this->db = $db;
     }
 
-    /**
-     * Sanitiza los datos del estudiante
-     *
-     * @param array $data Datos a sanitizar
-     * @return array Datos sanitizados
-     */
-    private function sanitize(array $data): array
-    {
-        return [
-            'name' => sanitize_string($data['name'] ?? ''),
-            'email' => sanitize_email($data['email'] ?? ''),
-            'phone' => sanitize_string($data['phone'] ?? ''),
-        ];
-    }
-
-    /**
-     * Obtiene todos los estudiantes ordenados por ID descendente
-     *
-     * @return array Lista de estudiantes
-     */
     public function all(): array
     {
         try {
-            $stmt = $this->db->query(
-                "SELECT id, name, email, phone, created_at 
-                 FROM {$this->table} 
-                 ORDER BY id DESC"
-            );
+            $stmt = $this->db->query($this->buildSelectAllQuery());
             return $stmt->fetchAll();
         } catch (PDOException $e) {
-            app_log("Error al obtener estudiantes: " . $e->getMessage(), 'error');
+            $this->logError(self::LOG_ERROR_ALL, $e);
             return [];
         }
     }
 
-    /**
-     * Obtiene estudiantes paginados
-     *
-     * @param int $page Página actual
-     * @param int $perPage Items por página
-     * @param string|null $search Término de búsqueda opcional
-     * @param array $filters Filtros adicionales
-     * @return Paginator Objeto paginador
-     */
-    public function paginate(int $page = 1, int $perPage = 10, ?string $search = null, array $filters = []): Paginator
+    public function paginate(int $page = 1, int $perPage = self::DEFAULT_PER_PAGE, ?string $search = null, array $filters = []): Paginator
     {
         try {
-            // Construir query de conteo
-            $countQuery = "SELECT COUNT(*) as total FROM {$this->table}";
-            $dataQuery = "SELECT id, name, email, phone, created_at FROM {$this->table}";
-            $params = [];
-            $whereClauses = [];
-
-            // Agregar filtro de búsqueda si existe
-            if ($search) {
-                $whereClauses[] = "(name LIKE :search OR email LIKE :search OR phone LIKE :search)";
-                $params['search'] = "%{$search}%";
-            }
-
-            // Filtro por fecha (desde)
-            if (!empty($filters['date_from'])) {
-                $whereClauses[] = "DATE(created_at) >= :date_from";
-                $params['date_from'] = $filters['date_from'];
-            }
-
-            // Filtro por fecha (hasta)
-            if (!empty($filters['date_to'])) {
-                $whereClauses[] = "DATE(created_at) <= :date_to";
-                $params['date_to'] = $filters['date_to'];
-            }
-
-            // Filtro por email (contiene dominio específico)
-            if (!empty($filters['email_domain'])) {
-                $whereClauses[] = "email LIKE :email_domain";
-                $params['email_domain'] = "%@{$filters['email_domain']}%";
-            }
-
-            // Construir WHERE clause
-            if (!empty($whereClauses)) {
-                $whereClause = " WHERE " . implode(" AND ", $whereClauses);
-                $countQuery .= $whereClause;
-                $dataQuery .= $whereClause;
-            }
-
-            // Contar total de registros
-            $stmt = $this->db->prepare($countQuery);
-            $stmt->execute($params);
-            $total = (int) $stmt->fetch()['total'];
-
-            // Calcular offset
-            $offset = ($page - 1) * $perPage;
-
-            // Determinar ordenamiento
-            $orderBy = match($filters['sort_by'] ?? 'id') {
-                'name' => 'name',
-                'email' => 'email',
-                'date' => 'created_at',
-                default => 'id'
-            };
-
-            $orderDir = (isset($filters['sort_dir']) && strtoupper($filters['sort_dir']) === 'ASC') ? 'ASC' : 'DESC';
-
-            // Obtener datos paginados
-            $dataQuery .= " ORDER BY {$orderBy} {$orderDir} LIMIT :limit OFFSET :offset";
-            $stmt = $this->db->prepare($dataQuery);
-            
-            foreach ($params as $key => $value) {
-                $stmt->bindValue(':' . $key, $value);
-            }
-            $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
-            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-            
-            $stmt->execute();
-            $items = $stmt->fetchAll();
+            $queryBuilder = $this->buildPaginationQueries($search, $filters);
+            $total = $this->getTotalCount($queryBuilder['count'], $queryBuilder['params']);
+            $items = $this->getPaginatedItems($queryBuilder['data'], $queryBuilder['params'], $page, $perPage, $filters);
 
             return new Paginator($items, $total, $perPage, $page);
         } catch (PDOException $e) {
-            app_log("Error al paginar estudiantes: " . $e->getMessage(), 'error');
+            $this->logError(self::LOG_ERROR_PAGINATE, $e);
             return new Paginator([], 0, $perPage, $page);
         }
     }
 
-    /**
-     * Busca estudiantes por término de búsqueda
-     *
-     * @param string $search Término de búsqueda
-     * @return array
-     */
     public function search(string $search): array
     {
         try {
-            $stmt = $this->db->prepare("
-                SELECT id, name, email, phone, created_at 
-                FROM {$this->table} 
-                WHERE name LIKE :search 
-                   OR email LIKE :search 
-                   OR phone LIKE :search
-                ORDER BY name ASC
-                LIMIT 50
-            ");
+            $stmt = $this->db->prepare($this->buildSearchQuery());
             $stmt->execute(['search' => "%{$search}%"]);
             return $stmt->fetchAll();
         } catch (PDOException $e) {
-            app_log("Error searching students: " . $e->getMessage(), 'error');
+            $this->logError(self::LOG_ERROR_SEARCH, $e);
             return [];
         }
     }
 
-    /**
-     * Obtiene estadísticas de estudiantes
-     *
-     * @return array
-     */
     public function getStats(): array
     {
         try {
-            $stats = [];
-
-            // Total de estudiantes
-            $stmt = $this->db->query("SELECT COUNT(*) as total FROM {$this->table}");
-            $stats['total'] = (int) $stmt->fetch()['total'];
-
-            // Estudiantes registrados hoy
-            $stmt = $this->db->query("
-                SELECT COUNT(*) as today 
-                FROM {$this->table} 
-                WHERE DATE(created_at) = CURDATE()
-            ");
-            $stats['today'] = (int) $stmt->fetch()['today'];
-
-            // Estudiantes registrados esta semana
-            $stmt = $this->db->query("
-                SELECT COUNT(*) as week 
-                FROM {$this->table} 
-                WHERE YEARWEEK(created_at, 1) = YEARWEEK(CURDATE(), 1)
-            ");
-            $stats['week'] = (int) $stmt->fetch()['week'];
-
-            // Estudiantes registrados este mes
-            $stmt = $this->db->query("
-                SELECT COUNT(*) as month 
-                FROM {$this->table} 
-                WHERE YEAR(created_at) = YEAR(CURDATE()) 
-                  AND MONTH(created_at) = MONTH(CURDATE())
-            ");
-            $stats['month'] = (int) $stmt->fetch()['month'];
-
-            // Dominios de email más comunes
-            $stmt = $this->db->query("
-                SELECT SUBSTRING_INDEX(email, '@', -1) as domain, COUNT(*) as count
-                FROM {$this->table}
-                GROUP BY domain
-                ORDER BY count DESC
-                LIMIT 5
-            ");
-            $stats['email_domains'] = $stmt->fetchAll();
-
-            return $stats;
-        } catch (PDOException $e) {
-            app_log("Error getting stats: " . $e->getMessage(), 'error');
             return [
-                'total' => 0,
-                'today' => 0,
-                'week' => 0,
-                'month' => 0,
-                'email_domains' => []
+                self::STAT_TOTAL => $this->getTotalStudents(),
+                self::STAT_TODAY => $this->getTodayStudents(),
+                self::STAT_WEEK => $this->getWeekStudents(),
+                self::STAT_MONTH => $this->getMonthStudents(),
+                self::STAT_EMAIL_DOMAINS => $this->getTopEmailDomains(),
             ];
+        } catch (PDOException $e) {
+            $this->logError(self::LOG_ERROR_STATS, $e);
+            return $this->getEmptyStats();
         }
     }
 
-    /**
-     * Cuenta el total de estudiantes
-     *
-     * @return int
-     */
     public function count(): int
     {
         try {
-            $stmt = $this->db->query("SELECT COUNT(*) as total FROM {$this->table}");
-            return (int) $stmt->fetch()['total'];
+            $stmt = $this->db->query($this->buildCountQuery());
+            return (int) $stmt->fetchColumn();
         } catch (PDOException $e) {
-            app_log("Error al contar estudiantes: " . $e->getMessage(), 'error');
+            $this->logError(self::LOG_ERROR_COUNT, $e);
             return 0;
         }
     }
 
-    /**
-     * Busca un estudiante por ID
-     *
-     * @param int $id ID del estudiante
-     * @return array|null Datos del estudiante o null si no existe
-     */
     public function find(int $id): ?array
     {
         try {
-            $stmt = $this->db->prepare(
-                "SELECT id, name, email, phone, created_at 
-                 FROM {$this->table} 
-                 WHERE id = :id"
-            );
-            $stmt->execute(['id' => $id]);
-            $result = $stmt->fetch();
-            
-            return $result ?: null;
+            $stmt = $this->db->prepare($this->buildFindByIdQuery());
+            $stmt->execute([self::COLUMN_ID => $id]);
+            return $this->fetchOneOrNull($stmt);
         } catch (PDOException $e) {
-            app_log("Error al buscar estudiante ID {$id}: " . $e->getMessage(), 'error');
+            $this->logError(sprintf(self::LOG_ERROR_FIND, $id), $e);
             return null;
         }
     }
 
-    /**
-     * Crea un nuevo estudiante
-     *
-     * @param array $data Datos del estudiante
-     * @return int ID del estudiante creado
-     * @throws PDOException
-     */
     public function create(array $data): int
     {
-        $data = $this->sanitize($data);
+        $data = $this->sanitizeData($data);
         
-        $stmt = $this->db->prepare(
-            "INSERT INTO {$this->table} (name, email, phone, created_at) 
-             VALUES (:name, :email, :phone, NOW())"
-        );
-        
-        $stmt->execute([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'phone' => $data['phone'],
-        ]);
+        $stmt = $this->db->prepare($this->buildInsertQuery());
+        $this->executeInsert($stmt, $data);
 
-        return (int)$this->db->lastInsertId();
+        return (int) $this->db->lastInsertId();
     }
 
-    /**
-     * Actualiza un estudiante existente
-     *
-     * @param int $id ID del estudiante
-     * @param array $data Nuevos datos
-     * @return bool True si se actualizó correctamente
-     * @throws PDOException
-     */
     public function update(int $id, array $data): bool
     {
-        $data = $this->sanitize($data);
+        $data = $this->sanitizeData($data);
         
-        $stmt = $this->db->prepare(
-            "UPDATE {$this->table} 
-             SET name = :name, email = :email, phone = :phone 
-             WHERE id = :id"
-        );
-        
-        return $stmt->execute([
-            'id' => $id,
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'phone' => $data['phone'],
-        ]);
+        $stmt = $this->db->prepare($this->buildUpdateQuery());
+        return $this->executeUpdate($stmt, $data, $id);
     }
 
-    /**
-     * Elimina un estudiante
-     *
-     * @param int $id ID del estudiante
-     * @return bool True si se eliminó correctamente
-     * @throws PDOException
-     */
     public function delete(int $id): bool
     {
-        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE id = :id");
-        return $stmt->execute(['id' => $id]);
+        $stmt = $this->db->prepare($this->buildDeleteQuery());
+        return $stmt->execute([self::COLUMN_ID => $id]);
     }
 
-    /**
-     * Cuenta el total de estudiantes
-     *
-     * @return int Total de estudiantes
-     */
-    public function count(): int
-    {
-        try {
-            $stmt = $this->db->query("SELECT COUNT(*) FROM {$this->table}");
-            return (int)$stmt->fetchColumn();
-        } catch (PDOException $e) {
-            app_log("Error al contar estudiantes: " . $e->getMessage(), 'error');
-            return 0;
-        }
-    }
-
-    /**
-     * Busca estudiantes por nombre o email
-     *
-     * @param string $search Término de búsqueda
-     * @return array Lista de estudiantes encontrados
-     */
-    public function search(string $search): array
-    {
-        try {
-            $stmt = $this->db->prepare(
-                "SELECT id, name, email, phone, created_at 
-                 FROM {$this->table} 
-                 WHERE name LIKE :search OR email LIKE :search
-                 ORDER BY id DESC"
-            );
-            
-            $searchTerm = '%' . $search . '%';
-            $stmt->execute(['search' => $searchTerm]);
-            
-            return $stmt->fetchAll();
-        } catch (PDOException $e) {
-            app_log("Error en búsqueda de estudiantes: " . $e->getMessage(), 'error');
-            return [];
-        }
-    }
-
-    /**
-     * Verifica si existe un email
-     *
-     * @param string $email Email a verificar
-     * @param int|null $excludeId ID a excluir (para updates)
-     * @return bool
-     */
     public function emailExists(string $email, ?int $excludeId = null): bool
     {
         try {
+            $query = $excludeId !== null 
+                ? $this->buildEmailExistsWithExclusionQuery() 
+                : $this->buildEmailExistsQuery();
+            
+            $stmt = $this->db->prepare($query);
+            $params = [self::COLUMN_EMAIL => $email];
+            
             if ($excludeId !== null) {
-                $stmt = $this->db->prepare(
-                    "SELECT COUNT(*) FROM {$this->table} WHERE email = :email AND id != :id"
-                );
-                $stmt->execute(['email' => $email, 'id' => $excludeId]);
-            } else {
-                $stmt = $this->db->prepare(
-                    "SELECT COUNT(*) FROM {$this->table} WHERE email = :email"
-                );
-                $stmt->execute(['email' => $email]);
+                $params[self::COLUMN_ID] = $excludeId;
             }
             
+            $stmt->execute($params);
             return $stmt->fetchColumn() > 0;
         } catch (PDOException $e) {
-            app_log("Error al verificar email: " . $e->getMessage(), 'error');
+            $this->logError(self::LOG_ERROR_EMAIL_CHECK, $e);
             return false;
         }
+    }
+
+    private function sanitizeData(array $data): array
+    {
+        return [
+            self::COLUMN_NAME => sanitize_string($data[self::COLUMN_NAME] ?? ''),
+            self::COLUMN_EMAIL => sanitize_email($data[self::COLUMN_EMAIL] ?? ''),
+            self::COLUMN_PHONE => sanitize_string($data[self::COLUMN_PHONE] ?? ''),
+        ];
+    }
+
+    private function buildSelectAllQuery(): string
+    {
+        return "SELECT " . $this->getSelectColumns() . " FROM " . self::TABLE . " ORDER BY " . self::DEFAULT_ORDER;
+    }
+
+    private function buildFindByIdQuery(): string
+    {
+        return "SELECT " . $this->getSelectColumns() . " FROM " . self::TABLE . " WHERE " . self::COLUMN_ID . " = :" . self::COLUMN_ID;
+    }
+
+    private function buildInsertQuery(): string
+    {
+        return "INSERT INTO " . self::TABLE . " (" . self::COLUMN_NAME . ", " . self::COLUMN_EMAIL . ", " . self::COLUMN_PHONE . ", " . self::COLUMN_CREATED_AT . ")
+                VALUES (:" . self::COLUMN_NAME . ", :" . self::COLUMN_EMAIL . ", :" . self::COLUMN_PHONE . ", NOW())";
+    }
+
+    private function buildUpdateQuery(): string
+    {
+        return "UPDATE " . self::TABLE . " 
+                SET " . self::COLUMN_NAME . " = :" . self::COLUMN_NAME . ", 
+                    " . self::COLUMN_EMAIL . " = :" . self::COLUMN_EMAIL . ", 
+                    " . self::COLUMN_PHONE . " = :" . self::COLUMN_PHONE . " 
+                WHERE " . self::COLUMN_ID . " = :" . self::COLUMN_ID;
+    }
+
+    private function buildDeleteQuery(): string
+    {
+        return "DELETE FROM " . self::TABLE . " WHERE " . self::COLUMN_ID . " = :" . self::COLUMN_ID;
+    }
+
+    private function buildCountQuery(): string
+    {
+        return "SELECT COUNT(*) FROM " . self::TABLE;
+    }
+
+    private function buildSearchQuery(): string
+    {
+        return "SELECT " . $this->getSelectColumns() . " 
+                FROM " . self::TABLE . " 
+                WHERE " . self::COLUMN_NAME . " LIKE :search 
+                   OR " . self::COLUMN_EMAIL . " LIKE :search 
+                   OR " . self::COLUMN_PHONE . " LIKE :search
+                ORDER BY " . self::COLUMN_NAME . " ASC
+                LIMIT " . self::SEARCH_LIMIT;
+    }
+
+    private function buildEmailExistsQuery(): string
+    {
+        return "SELECT COUNT(*) FROM " . self::TABLE . " WHERE " . self::COLUMN_EMAIL . " = :" . self::COLUMN_EMAIL;
+    }
+
+    private function buildEmailExistsWithExclusionQuery(): string
+    {
+        return "SELECT COUNT(*) FROM " . self::TABLE . " WHERE " . self::COLUMN_EMAIL . " = :" . self::COLUMN_EMAIL . " AND " . self::COLUMN_ID . " != :" . self::COLUMN_ID;
+    }
+
+    private function buildPaginationQueries(?string $search, array $filters): array
+    {
+        $countQuery = "SELECT COUNT(*) as " . self::STAT_TOTAL . " FROM " . self::TABLE;
+        $dataQuery = "SELECT " . $this->getSelectColumns() . " FROM " . self::TABLE;
+        $params = [];
+        $whereClauses = [];
+
+        if ($search) {
+            $whereClauses[] = "(" . self::COLUMN_NAME . " LIKE :search OR " . self::COLUMN_EMAIL . " LIKE :search OR " . self::COLUMN_PHONE . " LIKE :search)";
+            $params['search'] = "%{$search}%";
+        }
+
+        if (!empty($filters['date_from'])) {
+            $whereClauses[] = "DATE(" . self::COLUMN_CREATED_AT . ") >= :date_from";
+            $params['date_from'] = $filters['date_from'];
+        }
+
+        if (!empty($filters['date_to'])) {
+            $whereClauses[] = "DATE(" . self::COLUMN_CREATED_AT . ") <= :date_to";
+            $params['date_to'] = $filters['date_to'];
+        }
+
+        if (!empty($filters['email_domain'])) {
+            $whereClauses[] = self::COLUMN_EMAIL . " LIKE :email_domain";
+            $params['email_domain'] = "%@{$filters['email_domain']}%";
+        }
+
+        if (!empty($whereClauses)) {
+            $whereClause = " WHERE " . implode(" AND ", $whereClauses);
+            $countQuery .= $whereClause;
+            $dataQuery .= $whereClause;
+        }
+
+        return [
+            'count' => $countQuery,
+            'data' => $dataQuery,
+            'params' => $params,
+        ];
+    }
+
+    private function getTotalCount(string $query, array $params): int
+    {
+        $stmt = $this->db->prepare($query);
+        $stmt->execute($params);
+        return (int) $stmt->fetch()[self::STAT_TOTAL];
+    }
+
+    private function getPaginatedItems(string $query, array $params, int $page, int $perPage, array $filters): array
+    {
+        $offset = ($page - 1) * $perPage;
+        $orderBy = $this->determineOrderBy($filters);
+        $orderDir = $this->determineOrderDir($filters);
+
+        $query .= " ORDER BY {$orderBy} {$orderDir} LIMIT :limit OFFSET :offset";
+        $stmt = $this->db->prepare($query);
+        
+        foreach ($params as $key => $value) {
+            $stmt->bindValue(':' . $key, $value);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    private function determineOrderBy(array $filters): string
+    {
+        return match($filters['sort_by'] ?? self::SORT_BY_ID) {
+            self::SORT_BY_NAME => self::COLUMN_NAME,
+            self::SORT_BY_EMAIL => self::COLUMN_EMAIL,
+            self::SORT_BY_DATE => self::COLUMN_CREATED_AT,
+            default => self::COLUMN_ID
+        };
+    }
+
+    private function determineOrderDir(array $filters): string
+    {
+        return (isset($filters['sort_dir']) && strtoupper($filters['sort_dir']) === self::SORT_DIR_ASC) 
+            ? self::SORT_DIR_ASC 
+            : self::SORT_DIR_DESC;
+    }
+
+    private function getTotalStudents(): int
+    {
+        $stmt = $this->db->query("SELECT COUNT(*) as " . self::STAT_TOTAL . " FROM " . self::TABLE);
+        return (int) $stmt->fetch()[self::STAT_TOTAL];
+    }
+
+    private function getTodayStudents(): int
+    {
+        $stmt = $this->db->query("SELECT COUNT(*) as " . self::STAT_TODAY . " FROM " . self::TABLE . " WHERE DATE(" . self::COLUMN_CREATED_AT . ") = CURDATE()");
+        return (int) $stmt->fetch()[self::STAT_TODAY];
+    }
+
+    private function getWeekStudents(): int
+    {
+        $stmt = $this->db->query("SELECT COUNT(*) as " . self::STAT_WEEK . " FROM " . self::TABLE . " WHERE YEARWEEK(" . self::COLUMN_CREATED_AT . ", 1) = YEARWEEK(CURDATE(), 1)");
+        return (int) $stmt->fetch()[self::STAT_WEEK];
+    }
+
+    private function getMonthStudents(): int
+    {
+        $stmt = $this->db->query("SELECT COUNT(*) as " . self::STAT_MONTH . " FROM " . self::TABLE . " WHERE YEAR(" . self::COLUMN_CREATED_AT . ") = YEAR(CURDATE()) AND MONTH(" . self::COLUMN_CREATED_AT . ") = MONTH(CURDATE())");
+        return (int) $stmt->fetch()[self::STAT_MONTH];
+    }
+
+    private function getTopEmailDomains(): array
+    {
+        $stmt = $this->db->query("SELECT SUBSTRING_INDEX(" . self::COLUMN_EMAIL . ", '@', -1) as domain, COUNT(*) as count FROM " . self::TABLE . " GROUP BY domain ORDER BY count DESC LIMIT 5");
+        return $stmt->fetchAll();
+    }
+
+    private function getEmptyStats(): array
+    {
+        return [
+            self::STAT_TOTAL => 0,
+            self::STAT_TODAY => 0,
+            self::STAT_WEEK => 0,
+            self::STAT_MONTH => 0,
+            self::STAT_EMAIL_DOMAINS => []
+        ];
+    }
+
+    private function getSelectColumns(): string
+    {
+        return self::COLUMN_ID . ", " . self::COLUMN_NAME . ", " . self::COLUMN_EMAIL . ", " . self::COLUMN_PHONE . ", " . self::COLUMN_CREATED_AT;
+    }
+
+    private function executeInsert($stmt, array $data): void
+    {
+        $stmt->execute([
+            self::COLUMN_NAME => $data[self::COLUMN_NAME],
+            self::COLUMN_EMAIL => $data[self::COLUMN_EMAIL],
+            self::COLUMN_PHONE => $data[self::COLUMN_PHONE],
+        ]);
+    }
+
+    private function executeUpdate($stmt, array $data, int $id): bool
+    {
+        return $stmt->execute([
+            self::COLUMN_ID => $id,
+            self::COLUMN_NAME => $data[self::COLUMN_NAME],
+            self::COLUMN_EMAIL => $data[self::COLUMN_EMAIL],
+            self::COLUMN_PHONE => $data[self::COLUMN_PHONE],
+        ]);
+    }
+
+    private function fetchOneOrNull($stmt): ?array
+    {
+        $result = $stmt->fetch();
+        return $result ?: null;
+    }
+
+    private function logError(string $message, PDOException $e): void
+    {
+        app_log($message . $e->getMessage(), LOG_LEVEL_ERROR);
     }
 }

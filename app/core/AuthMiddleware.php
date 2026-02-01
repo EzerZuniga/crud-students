@@ -1,36 +1,68 @@
 <?php
-/**
- * Auth Middleware
- * Protege rutas que requieren autenticación
- */
 
 namespace App\Core;
 
 class AuthMiddleware
 {
-    /**
-     * Verifica si el usuario está autenticado
-     */
+    private const MSG_LOGIN_REQUIRED = 'Debes iniciar sesión para acceder a esta sección';
+    private const MSG_ADMIN_REQUIRED = 'No tienes permisos para acceder a esta sección';
+    private const MSG_GUEST_ONLY = 'Ya has iniciado sesión';
+    
+    private const ROLE_ADMIN = 'admin';
+    private const DEFAULT_REDIRECT = 'students.index';
+    private const LOGIN_REDIRECT = 'auth.login';
+
     public static function handle(): bool
     {
-        if (!auth_check()) {
-            flash('warning', 'Debes iniciar sesión para acceder a esta sección');
-            header('Location: ' . route('auth.login'));
-            exit;
+        if (!self::isAuthenticated()) {
+            self::redirectToLogin(self::MSG_LOGIN_REQUIRED, 'warning');
         }
         
         return true;
     }
 
-    /**
-     * Verifica si el usuario tiene un rol específico
-     */
     public static function hasRole(string $role): bool
     {
-        if (!auth_check()) {
+        if (!self::isAuthenticated()) {
             return false;
         }
 
+        return self::userHasRole($role);
+    }
+
+    public static function admin(): bool
+    {
+        if (!self::isAuthenticated()) {
+            self::redirectToLogin(self::MSG_LOGIN_REQUIRED, 'warning');
+        }
+
+        if (!self::hasRole(self::ROLE_ADMIN)) {
+            self::redirectWithMessage(
+                self::DEFAULT_REDIRECT,
+                self::MSG_ADMIN_REQUIRED,
+                'danger'
+            );
+        }
+
+        return true;
+    }
+
+    public static function guest(): bool
+    {
+        if (self::isAuthenticated()) {
+            self::redirectToDefault();
+        }
+        
+        return true;
+    }
+
+    private static function isAuthenticated(): bool
+    {
+        return auth_check();
+    }
+
+    private static function userHasRole(string $role): bool
+    {
         $user = auth_user();
         $roles = $user['roles'] ?? [];
         
@@ -43,36 +75,25 @@ class AuthMiddleware
         return false;
     }
 
-    /**
-     * Restringe acceso solo a administradores
-     */
-    public static function admin(): bool
+    private static function redirectToLogin(string $message, string $type = 'warning'): void
     {
-        if (!auth_check()) {
-            flash('warning', 'Debes iniciar sesión');
-            header('Location: ' . route('auth.login'));
-            exit;
-        }
-
-        if (!self::hasRole('admin')) {
-            flash('danger', 'No tienes permisos para acceder a esta sección');
-            header('Location: ' . route('students.index'));
-            exit;
-        }
-
-        return true;
+        self::redirectWithMessage(self::LOGIN_REDIRECT, $message, $type);
     }
 
-    /**
-     * Solo permite guest (no autenticados)
-     */
-    public static function guest(): bool
+    private static function redirectToDefault(): void
     {
-        if (auth_check()) {
-            header('Location: ' . route('students.index'));
-            exit;
-        }
-        
-        return true;
+        self::performRedirect(self::DEFAULT_REDIRECT);
+    }
+
+    private static function redirectWithMessage(string $route, string $message, string $type): void
+    {
+        flash($type, $message);
+        self::performRedirect($route);
+    }
+
+    private static function performRedirect(string $route): void
+    {
+        header('Location: ' . route($route));
+        exit;
     }
 }

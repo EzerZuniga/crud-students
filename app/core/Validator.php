@@ -1,217 +1,268 @@
 <?php
-/**
- * Clase para validación de datos
- * Proporciona métodos de validación reutilizables
- */
 
 namespace App\Core;
 
 class Validator
 {
+    private const MSG_REQUIRED = 'El campo %s es obligatorio';
+    private const MSG_EMAIL = 'El formato del correo es inválido';
+    private const MSG_MIN_LENGTH = 'El campo %s debe tener al menos %d caracteres';
+    private const MSG_MAX_LENGTH = 'El campo %s no debe exceder %d caracteres';
+    private const MSG_NUMERIC = 'El campo %s debe ser numérico';
+    private const MSG_ALPHA = 'El campo %s solo puede contener letras';
+    private const MSG_ALPHANUMERIC = 'El campo %s solo puede contener letras y números';
+    
+    private const ZERO_STRING = '0';
+
     private array $errors = [];
     private array $data = [];
+    private array $validatedFields = [];
 
-    /**
-     * Constructor
-     *
-     * @param array $data Datos a validar
-     */
     public function __construct(array $data)
     {
         $this->data = $data;
     }
 
-    /**
-     * Valida que un campo sea requerido
-     *
-     * @param string $field Nombre del campo
-     * @param string $message Mensaje de error personalizado
-     * @return self
-     */
-    public function required(string $field, string $message = null): self
+    public function required(string $field, ?string $message = null): self
     {
-        $value = $this->getValue($field);
+        $this->markFieldAsValidated($field);
         
-        if (empty($value) && $value !== '0') {
-            $this->errors[$field] = $message ?? "El campo {$field} es obligatorio";
+        if ($this->isFieldEmpty($field)) {
+            $this->addError($field, $message ?? sprintf(self::MSG_REQUIRED, $field));
         }
 
         return $this;
     }
 
-    /**
-     * Valida que un campo sea un email válido
-     *
-     * @param string $field Nombre del campo
-     * @param string $message Mensaje de error personalizado
-     * @return self
-     */
-    public function email(string $field, string $message = null): self
+    public function email(string $field, ?string $message = null): self
     {
+        $this->markFieldAsValidated($field);
         $value = $this->getValue($field);
         
-        if (!empty($value) && !filter_var($value, FILTER_VALIDATE_EMAIL)) {
-            $this->errors[$field] = $message ?? "El formato del correo es inválido";
+        if ($this->hasValue($value) && !$this->isValidEmail($value)) {
+            $this->addError($field, $message ?? self::MSG_EMAIL);
         }
 
         return $this;
     }
 
-    /**
-     * Valida la longitud mínima de un campo
-     *
-     * @param string $field Nombre del campo
-     * @param int $min Longitud mínima
-     * @param string $message Mensaje de error personalizado
-     * @return self
-     */
-    public function min(string $field, int $min, string $message = null): self
+    public function min(string $field, int $min, ?string $message = null): self
     {
+        $this->markFieldAsValidated($field);
         $value = $this->getValue($field);
         
-        if (!empty($value) && mb_strlen($value) < $min) {
-            $this->errors[$field] = $message ?? "El campo {$field} debe tener al menos {$min} caracteres";
+        if ($this->hasValue($value) && $this->getLength($value) < $min) {
+            $this->addError($field, $message ?? sprintf(self::MSG_MIN_LENGTH, $field, $min));
         }
 
         return $this;
     }
 
-    /**
-     * Valida la longitud máxima de un campo
-     *
-     * @param string $field Nombre del campo
-     * @param int $max Longitud máxima
-     * @param string $message Mensaje de error personalizado
-     * @return self
-     */
-    public function max(string $field, int $max, string $message = null): self
+    public function max(string $field, int $max, ?string $message = null): self
     {
+        $this->markFieldAsValidated($field);
         $value = $this->getValue($field);
         
-        if (!empty($value) && mb_strlen($value) > $max) {
-            $this->errors[$field] = $message ?? "El campo {$field} no debe exceder {$max} caracteres";
+        if ($this->hasValue($value) && $this->getLength($value) > $max) {
+            $this->addError($field, $message ?? sprintf(self::MSG_MAX_LENGTH, $field, $max));
         }
 
         return $this;
     }
 
-    /**
-     * Valida que un campo sea numérico
-     *
-     * @param string $field Nombre del campo
-     * @param string $message Mensaje de error personalizado
-     * @return self
-     */
-    public function numeric(string $field, string $message = null): self
+    public function numeric(string $field, ?string $message = null): self
     {
+        $this->markFieldAsValidated($field);
         $value = $this->getValue($field);
         
-        if (!empty($value) && !is_numeric($value)) {
-            $this->errors[$field] = $message ?? "El campo {$field} debe ser numérico";
+        if ($this->hasValue($value) && !$this->isNumeric($value)) {
+            $this->addError($field, $message ?? sprintf(self::MSG_NUMERIC, $field));
         }
 
         return $this;
     }
 
-    /**
-     * Valida con una expresión regular personalizada
-     *
-     * @param string $field Nombre del campo
-     * @param string $pattern Patrón regex
-     * @param string $message Mensaje de error
-     * @return self
-     */
+    public function alpha(string $field, ?string $message = null): self
+    {
+        $this->markFieldAsValidated($field);
+        $value = $this->getValue($field);
+        
+        if ($this->hasValue($value) && !$this->isAlpha($value)) {
+            $this->addError($field, $message ?? sprintf(self::MSG_ALPHA, $field));
+        }
+
+        return $this;
+    }
+
+    public function alphanumeric(string $field, ?string $message = null): self
+    {
+        $this->markFieldAsValidated($field);
+        $value = $this->getValue($field);
+        
+        if ($this->hasValue($value) && !$this->isAlphanumeric($value)) {
+            $this->addError($field, $message ?? sprintf(self::MSG_ALPHANUMERIC, $field));
+        }
+
+        return $this;
+    }
+
     public function pattern(string $field, string $pattern, string $message): self
     {
+        $this->markFieldAsValidated($field);
         $value = $this->getValue($field);
         
-        if (!empty($value) && !preg_match($pattern, $value)) {
-            $this->errors[$field] = $message;
+        if ($this->hasValue($value) && !$this->matchesPattern($value, $pattern)) {
+            $this->addError($field, $message);
         }
 
         return $this;
     }
 
-    /**
-     * Verifica si la validación pasó
-     *
-     * @return bool
-     */
     public function passes(): bool
     {
         return empty($this->errors);
     }
 
-    /**
-     * Verifica si la validación falló
-     *
-     * @return bool
-     */
     public function fails(): bool
     {
         return !$this->passes();
     }
 
-    /**
-     * Obtiene los errores de validación
-     *
-     * @return array
-     */
     public function errors(): array
     {
         return $this->errors;
     }
 
-    /**
-     * Obtiene los datos validados (limpios)
-     *
-     * @return array
-     */
     public function validated(): array
+    {
+        return $this->sanitizeValidatedData();
+    }
+
+    public static function make(array $data, array $rules): array
+    {
+        $validator = new self($data);
+        $validator->applyRules($rules);
+
+        return [$validator->validated(), $validator->errors()];
+    }
+
+    private function getValue(string $field): mixed
+    {
+        return $this->data[$field] ?? null;
+    }
+
+    private function hasValue(mixed $value): bool
+    {
+        return !empty($value) || $value === self::ZERO_STRING;
+    }
+
+    private function isFieldEmpty(string $field): bool
+    {
+        $value = $this->getValue($field);
+        return empty($value) && $value !== self::ZERO_STRING;
+    }
+
+    private function isValidEmail(string $email): bool
+    {
+        return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+    }
+
+    private function getLength(string $value): int
+    {
+        return mb_strlen($value);
+    }
+
+    private function isNumeric(mixed $value): bool
+    {
+        return is_numeric($value);
+    }
+
+    private function isAlpha(string $value): bool
+    {
+        return ctype_alpha($value);
+    }
+
+    private function isAlphanumeric(string $value): bool
+    {
+        return ctype_alnum($value);
+    }
+
+    private function matchesPattern(string $value, string $pattern): bool
+    {
+        return preg_match($pattern, $value) === 1;
+    }
+
+    private function addError(string $field, string $message): void
+    {
+        $this->errors[$field] = $message;
+    }
+
+    private function markFieldAsValidated(string $field): void
+    {
+        if (!in_array($field, $this->validatedFields, true)) {
+            $this->validatedFields[] = $field;
+        }
+    }
+
+    private function sanitizeValidatedData(): array
     {
         $validated = [];
         
-        foreach ($this->data as $key => $value) {
-            $validated[$key] = is_string($value) ? trim($value) : $value;
+        foreach ($this->validatedFields as $field) {
+            if (array_key_exists($field, $this->data)) {
+                $validated[$field] = $this->sanitizeValue($this->data[$field]);
+            }
         }
 
         return $validated;
     }
 
-    /**
-     * Obtiene el valor de un campo
-     *
-     * @param string $field Nombre del campo
-     * @return mixed
-     */
-    private function getValue(string $field)
+    private function sanitizeData(): array
     {
-        return $this->data[$field] ?? null;
-    }
-
-    /**
-     * Método estático para crear una instancia y validar
-     *
-     * @param array $data Datos a validar
-     * @param array $rules Reglas de validación
-     * @return array [datos_validados, errores]
-     */
-    public static function make(array $data, array $rules): array
-    {
-        $validator = new self($data);
+        $validated = [];
         
-        foreach ($rules as $field => $fieldRules) {
-            foreach ($fieldRules as $rule) {
-                if (is_string($rule)) {
-                    $validator->$rule($field);
-                } elseif (is_array($rule)) {
-                    $method = $rule[0];
-                    $params = array_slice($rule, 1);
-                    $validator->$method($field, ...$params);
-                }
-            }
+        foreach ($this->data as $key => $value) {
+            $validated[$key] = $this->sanitizeValue($value);
         }
 
-        return [$validator->validated(), $validator->errors()];
+        return $validated;
+    }
+
+    private function sanitizeValue(mixed $value): mixed
+    {
+        return is_string($value) ? trim($value) : $value;
+    }
+
+    private function applyRules(array $rules): void
+    {
+        foreach ($rules as $field => $fieldRules) {
+            $this->applyFieldRules($field, $fieldRules);
+        }
+    }
+
+    private function applyFieldRules(string $field, array $fieldRules): void
+    {
+        foreach ($fieldRules as $rule) {
+            $this->applyRule($field, $rule);
+        }
+    }
+
+    private function applyRule(string $field, string|array $rule): void
+    {
+        if (is_string($rule)) {
+            $this->$rule($field);
+            return;
+        }
+
+        if (is_array($rule)) {
+            $this->applyArrayRule($field, $rule);
+        }
+    }
+
+    private function applyArrayRule(string $field, array $rule): void
+    {
+        $method = $rule[0];
+        $params = array_slice($rule, 1);
+        $this->$method($field, ...$params);
     }
 }

@@ -1,53 +1,137 @@
-# Dependencias
+# =============================================================================
+# DEPENDENCIAS
+# =============================================================================
 /vendor/
 node_modules/
 package-lock.json
+composer.phar
 
-# Entorno
+# =============================================================================
+# ENTORNO Y CONFIGURACIÓN SENSIBLE
+# =============================================================================
 .env
 .env.local
 .env.*.local
+.env.backup
+*.env
 
-# IDEs
-/.idea/
-*.sublime-project
-*.sublime-workspace
-/.fleet/
-
-# Sistema Operativo
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Logs
-storage/logs/*.log
-storage/logs/*.txt
-!storage/logs/.gitkeep
-
-# Archivos temporales
-*.tmp
-*.temp
-*.swp
-*.swo
-*~
-
-# Configuración local
+# Configuración local de base de datos
 config/database.php
 !config/database.example.php
 
-# Uploads (si se implementa en el futuro)
-storage/uploads/*
-!storage/uploads/.gitkeep
+# =============================================================================
+# IDEs Y EDITORES
+# =============================================================================
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains (PhpStorm, IntelliJ)
+/.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Fleet
+/.fleet/
+
+# Vim
+*.swp
+*.swo
+*~
+.netrwhist
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+
+# =============================================================================
+# SISTEMA OPERATIVO
+# =============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+*.lnk
+
+# Linux
+*~
+
+# =============================================================================
+# LOGS Y ALMACENAMIENTO
+# =============================================================================
+storage/logs/*.log
+storage/logs/*.txt
+!storage/logs/.gitkeep
 
 # Cache
 storage/cache/*
 !storage/cache/.gitkeep
 
-# Testing
+# Sessions (si se guardan en archivos)
+storage/sessions/*
+!storage/sessions/.gitkeep
+
+# Uploads
+storage/uploads/*
+!storage/uploads/.gitkeep
+
+# =============================================================================
+# TESTING Y COBERTURA
+# =============================================================================
 .phpunit.result.cache
 .phpunit.cache/
 /coverage/
+coverage.xml
+*.coverage
+.php-cs-fixer.cache
+phpcs.xml
+phpunit.xml.bak
 
-# Build
+# =============================================================================
+# BUILD Y COMPILACIÓN
+# =============================================================================
 /build/
 /dist/
+*.phar
+
+# =============================================================================
+# ARCHIVOS TEMPORALES
+# =============================================================================
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+
+# =============================================================================
+# SEGURIDAD - NUNCA SUBIR ESTOS ARCHIVOS
+# =============================================================================
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_dsa
+*.pub
+credentials.json
+secrets.json
+auth.json

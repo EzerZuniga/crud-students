@@ -1,111 +1,116 @@
 <?php
-/**
- * Permission Middleware
- * Middleware para verificar permisos específicos
- */
 
 namespace App\Core;
 
 class PermissionMiddleware
 {
-    /**
-     * Verifica si el usuario tiene el permiso especificado
-     *
-     * @param string $permission Nombre del permiso requerido
-     * @return bool
-     */
+    private const MSG_LOGIN_REQUIRED = 'Debes iniciar sesión';
+    private const MSG_PERMISSION_DENIED = 'No tienes permisos para realizar esta acción';
+    private const MSG_PERMISSIONS_DENIED = 'No tienes los permisos necesarios';
+    
+    private const LOGIN_ROUTE = 'auth.login';
+    private const DEFAULT_REDIRECT = 'students.index';
+    
+    private const PERMISSION_STUDENTS_CREATE = 'students.create';
+    private const PERMISSION_STUDENTS_EDIT = 'students.edit';
+    private const PERMISSION_STUDENTS_DELETE = 'students.delete';
+    private const PERMISSION_STUDENTS_VIEW = 'students.view';
+
     public static function check(string $permission): bool
     {
-        if (!auth_check()) {
-            flash('warning', 'Debes iniciar sesión');
-            header('Location: ' . route('auth.login'));
-            exit;
-        }
+        self::ensureAuthenticated();
 
-        if (!can($permission)) {
-            flash('danger', 'No tienes permisos para realizar esta acción');
-            header('Location: ' . route('students.index'));
-            exit;
+        if (!self::userHasPermission($permission)) {
+            self::redirectWithError(self::MSG_PERMISSION_DENIED);
         }
 
         return true;
     }
 
-    /**
-     * Verifica si el usuario tiene alguno de los permisos especificados
-     *
-     * @param array $permissions Array de permisos
-     * @return bool
-     */
     public static function checkAny(array $permissions): bool
     {
-        if (!auth_check()) {
-            flash('warning', 'Debes iniciar sesión');
-            header('Location: ' . route('auth.login'));
-            exit;
-        }
+        self::ensureAuthenticated();
 
-        if (!can_any($permissions)) {
-            flash('danger', 'No tienes permisos para realizar esta acción');
-            header('Location: ' . route('students.index'));
-            exit;
+        if (!self::userHasAnyPermission($permissions)) {
+            self::redirectWithError(self::MSG_PERMISSION_DENIED);
         }
 
         return true;
     }
 
-    /**
-     * Verifica si el usuario tiene todos los permisos especificados
-     *
-     * @param array $permissions Array de permisos
-     * @return bool
-     */
     public static function checkAll(array $permissions): bool
     {
-        if (!auth_check()) {
-            flash('warning', 'Debes iniciar sesión');
-            header('Location: ' . route('auth.login'));
-            exit;
-        }
+        self::ensureAuthenticated();
 
-        if (!can_all($permissions)) {
-            flash('danger', 'No tienes los permisos necesarios');
-            header('Location: ' . route('students.index'));
-            exit;
+        if (!self::userHasAllPermissions($permissions)) {
+            self::redirectWithError(self::MSG_PERMISSIONS_DENIED);
         }
 
         return true;
     }
 
-    /**
-     * Middleware para crear estudiantes
-     */
     public static function canCreateStudents(): bool
     {
-        return self::check('students.create');
+        return self::check(self::PERMISSION_STUDENTS_CREATE);
     }
 
-    /**
-     * Middleware para editar estudiantes
-     */
     public static function canEditStudents(): bool
     {
-        return self::check('students.edit');
+        return self::check(self::PERMISSION_STUDENTS_EDIT);
     }
 
-    /**
-     * Middleware para eliminar estudiantes
-     */
     public static function canDeleteStudents(): bool
     {
-        return self::check('students.delete');
+        return self::check(self::PERMISSION_STUDENTS_DELETE);
     }
 
-    /**
-     * Middleware para ver estudiantes
-     */
     public static function canViewStudents(): bool
     {
-        return self::check('students.view');
+        return self::check(self::PERMISSION_STUDENTS_VIEW);
+    }
+
+    private static function ensureAuthenticated(): void
+    {
+        if (!self::isAuthenticated()) {
+            self::redirectToLogin();
+        }
+    }
+
+    private static function isAuthenticated(): bool
+    {
+        return auth_check();
+    }
+
+    private static function userHasPermission(string $permission): bool
+    {
+        return can($permission);
+    }
+
+    private static function userHasAnyPermission(array $permissions): bool
+    {
+        return can_any($permissions);
+    }
+
+    private static function userHasAllPermissions(array $permissions): bool
+    {
+        return can_all($permissions);
+    }
+
+    private static function redirectToLogin(): void
+    {
+        flash('warning', self::MSG_LOGIN_REQUIRED);
+        self::performRedirect(self::LOGIN_ROUTE);
+    }
+
+    private static function redirectWithError(string $message): void
+    {
+        flash('danger', $message);
+        self::performRedirect(self::DEFAULT_REDIRECT);
+    }
+
+    private static function performRedirect(string $route): void
+    {
+        header('Location: ' . route($route));
+        exit;
     }
 }
